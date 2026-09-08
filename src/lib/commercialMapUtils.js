@@ -31,10 +31,11 @@ export const DEPT_SLUGS = {
 };
 
 export const TILES = {
+  'google-maps': { url: 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', opts: { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google' } },
+  'google-satellite': { url: 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', opts: { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google' } },
   'osm': { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', opts: { maxZoom: 19, attribution: '© OpenStreetMap' } },
-  'carto-light': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 19, attribution: '© CartoDB' } },
   'carto-dark': { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 19, attribution: '© CartoDB' } },
-  'google-satellite': { url: 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', opts: { maxZoom: 19, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google' } },
+  'carto-light': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 19, attribution: '© CartoDB' } },
   'none': null,
 };
 

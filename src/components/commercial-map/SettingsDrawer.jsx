@@ -26,7 +26,7 @@ export default function SettingsDrawer({ open, onClose, style, onStyle, tile, on
                   tile === key ? 'border-rose-400 text-rose-400 bg-rose-500/5' : 'border-slate-700/50 text-slate-500 hover:border-slate-600 hover:text-slate-300'
                 )}
               >
-                {key === 'osm' ? 'OpenStreetMap' : key === 'carto-light' ? 'Carto Light' : key === 'carto-dark' ? 'Carto Dark' : key === 'google-satellite' ? 'Satellite' : 'Aucun'}
+                {key === 'google-maps' ? 'Google Maps' : key === 'google-satellite' ? 'Satellite' : key === 'osm' ? 'OpenStreetMap' : key === 'carto-dark' ? 'Dark' : key === 'carto-light' ? 'Clair' : 'Aucun'}
               </button>
             ))}
           </div>

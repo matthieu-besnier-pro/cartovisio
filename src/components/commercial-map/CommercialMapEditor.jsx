@@ -55,7 +55,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   const [editAction, setEditAction] = useState('add');
   const [newVendorName, setNewVendorName] = useState('');
   const [style, setStyle] = useState(DEFAULT_STYLE);
-  const [tile, setTile] = useState('carto-dark');
+  const [tile, setTile] = useState('osm');
   const [tableOpen, setTableOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -283,7 +283,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     cantonLayerRef.current = L.layerGroup([], { pane: 'cantonPane' }).addTo(map);
     ancCantonLayerRef.current = L.layerGroup([], { pane: 'cantonPane' }).addTo(map);
 
-    const t = TILES[tile] || TILES['carto-dark'];
+    const t = TILES[tile] || TILES['osm'];
     tileLayerRef.current = L.tileLayer(t.url, t.opts).addTo(map);
 
     // Load initial overlays + departments

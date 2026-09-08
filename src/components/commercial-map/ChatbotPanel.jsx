@@ -35,7 +35,8 @@ export default function ChatbotPanel({ vendors, communeNames, onAction }) {
       setMessages(m => [...m, { role: 'assistant', content: reply }]);
       if (action && action.action !== 'answer') onAction(action);
     } catch (e) {
-      setMessages(m => [...m, { role: 'assistant', content: 'Erreur : ' + (e.message || 'impossible de contacter l\'assistant') }]);
+      const serverErr = e?.response?.data?.error || e?.data?.error || e?.message || 'impossible de contacter l\'assistant';
+      setMessages(m => [...m, { role: 'assistant', content: 'Erreur : ' + serverErr }]);
     } finally {
       setBusy(false);
     }
