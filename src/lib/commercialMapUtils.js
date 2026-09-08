@@ -543,23 +543,34 @@ async function inflateRaw(chunk) {
 
 async function extractKmlFromKmz(buf) {
   const view = new DataView(buf);
-  let off = 0;
-  while (off < buf.byteLength - 30) {
-    if (view.getUint32(off, true) !== 0x04034b50) break;
-    const method = view.getUint16(off + 8, true);
-    const compSize = view.getUint32(off + 18, true);
-    const fnLen = view.getUint16(off + 26, true);
-    const extraLen = view.getUint16(off + 28, true);
-    const fnStart = off + 30;
-    const name = new TextDecoder().decode(new Uint8Array(buf, fnStart, fnLen)).toLowerCase();
-    const dataStart = fnStart + fnLen + extraLen;
-    const dataEnd = dataStart + compSize;
-    if (name.endsWith('.kml')) {
-      if (method === 0) return new TextDecoder().decode(new Uint8Array(buf, dataStart, compSize));
-      if (method === 8 && typeof DecompressionStream !== 'undefined') return await inflateRaw(new Uint8Array(buf, dataStart, compSize));
-      throw new Error('KMZ compressé non lisible par ce navigateur.');
-    }
-    off = dataEnd;
+  // Find End of Central Directory record
+  let eocd = -1;
+  const minEocd = Math.max(0, buf.byteLength - 65557);
+  for (let i = buf.byteLength - 22; i >= minEocd; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('KMZ invalide (archive corrompue)');
+  const totalEntries = view.getUint16(eocd + 10, true);
+  const cdOffset = view.getUint32(eocd + 16, true);
+  let p = cdOffset;
+  for (let e = 0; e < totalEntries; e++) {
+    if (view.getUint32(p, true) !== 0x02014b50) break;
+    const method = view.getUint16(p + 10, true);
+    const compSize = view.getUint32(p + 20, true);
+    const fnLen = view.getUint16(p + 28, true);
+    const extraLen = view.getUint16(p + 30, true);
+    const commentLen = view.getUint16(p + 32, true);
+    const localOff = view.getUint32(p + 42, true);
+    const name = new TextDecoder().decode(new Uint8Array(buf, p + 46, fnLen)).toLowerCase();
+    p += 46 + fnLen + extraLen + commentLen;
+    if (!name.endsWith('.kml')) continue;
+    if (view.getUint32(localOff, true) !== 0x04034b50) continue;
+    const lfnLen = view.getUint16(localOff + 26, true);
+    const lextraLen = view.getUint16(localOff + 28, true);
+    const dataStart = localOff + 30 + lfnLen + lextraLen;
+    if (method === 0) return new TextDecoder().decode(new Uint8Array(buf, dataStart, compSize));
+    if (method === 8 && typeof DecompressionStream !== 'undefined') return await inflateRaw(new Uint8Array(buf, dataStart, compSize));
+    throw new Error('Méthode de compression KMZ non supportée');
   }
   return null;
 }
