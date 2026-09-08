@@ -31,10 +31,11 @@ export function filialeStyle(category) {
   return { color: fallback, gradient: `linear-gradient(135deg,${fallback},${fallback}cc)`, emoji: '🌾' };
 }
 
-// Large JSON fields are stored as uploaded files to respect entity field size limits
-const FIELD_INLINE_LIMIT = 40000;
+// Large JSON fields are stored as uploaded files to respect entity field size limits.
+// Always upload: the platform enforces a hard size limit on entity string fields that
+// even moderate overlay JSON exceeds, so we offload every save to a file URL.
 export async function storeLargeField(value, filename) {
-  if (!value || value.length <= FIELD_INLINE_LIMIT) return value;
+  if (!value) return value;
   const file = new File([new Blob([value], { type: 'application/json' })], filename, { type: 'application/json' });
   const { file_url } = await base44.integrations.Core.UploadFile({ file });
   return file_url;
