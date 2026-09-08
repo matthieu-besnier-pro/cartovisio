@@ -173,19 +173,88 @@ function extractCVFromText(text, log) {
   return null;
 }
 
+// ── Markers (Pôle Agri) extraction from HTML ──
+function cleanPopupText(s) {
+  return (s || '').replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+const AGRI_RE = /agri|p[oô]le|coop|silo|négoc|negoc|créal|creal|éleveur|eleveur|matériel|materiel|semence|ferme|exploit|stockage|grain/i;
+function collectPoint(it, add) {
+  if (!it || typeof it !== 'object') return;
+  const lat = it.lat ?? it.latitude ?? (it.latlng && it.latlng[0]) ?? (it.center && it.center[0])
+    ?? (it.geometry && it.geometry.type === 'Point' ? it.geometry.coordinates[1] : null)
+    ?? (it.properties && (it.properties.lat || it.properties.latitude)) ?? null;
+  const lng = it.lng ?? it.longitude ?? it.lon ?? it.lnglon ?? (it.latlng && it.latlng[1]) ?? (it.center && it.center[1])
+    ?? (it.geometry && it.geometry.type === 'Point' ? it.geometry.coordinates[0] : null)
+    ?? (it.properties && (it.properties.lng || it.properties.longitude)) ?? null;
+  const name = it.name || it.label || it.title || it.nom || it.popup
+    || (it.properties && (it.properties.name || it.properties.nom || it.properties.title)) || '';
+  if (lat != null && lng != null) add(parseFloat(lat), parseFloat(lng), cleanPopupText(String(name)));
+}
+export function extractMarkersFromText(text, log) {
+  const all = [];
+  const seen = new Set();
+  const add = (lat, lng, name) => {
+    if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return;
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    all.push({ id: 'pa_' + all.length + '_' + Math.random().toString(36).slice(2, 6), lat, lng, name: (name || 'Pôle Agri').trim() });
+  };
+  let m;
+  const markerRe = /L\.marker\(\s*\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]/g;
+  while ((m = markerRe.exec(text)) !== null) {
+    const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+    const after = text.slice(m.index, m.index + 500);
+    let name = '';
+    const popMatch = after.match(/(?:bindPopup|bindTooltip)\s*\(\s*(["'`])([\s\S]*?)\1/);
+    if (popMatch) name = cleanPopupText(popMatch[2]);
+    add(lat, lng, name);
+  }
+  const cmRe = /L\.circleMarker\(\s*\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]/g;
+  while ((m = cmRe.exec(text)) !== null) {
+    const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+    const after = text.slice(m.index, m.index + 500);
+    let name = '';
+    const popMatch = after.match(/(?:bindPopup|bindTooltip)\s*\(\s*(["'`])([\s\S]*?)\1/);
+    if (popMatch) name = cleanPopupText(popMatch[2]);
+    add(lat, lng, name);
+  }
+  const scriptRe = /<script[^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  while ((m = scriptRe.exec(text)) !== null) {
+    let parsed;
+    try { parsed = JSON.parse(m[1].trim()); } catch { continue; }
+    const items = Array.isArray(parsed) ? parsed
+      : (parsed.features || parsed.markers || parsed.points || (Array.isArray(parsed.data) ? parsed.data : null));
+    if (items) items.forEach(it => collectPoint(it, add));
+    else if (parsed && parsed.geometry && parsed.geometry.type === 'Point') collectPoint(parsed, add);
+  }
+  const assignRe = /(?:var|let|const)\s+\w+\s*=\s*(\[[\s\S]*?\]);/g;
+  while ((m = assignRe.exec(text)) !== null) {
+    let arr;
+    try { arr = JSON.parse(m[1]); } catch { continue; }
+    if (Array.isArray(arr)) arr.forEach(it => collectPoint(it, add));
+  }
+  const agri = all.filter(mk => AGRI_RE.test(mk.name));
+  const result = agri.length ? agri : all;
+  if (result.length && log) log(`📍 ${result.length} marqueurs Pôle Agri détectés`, 'ok');
+  return result;
+}
+
 export async function processHtmlFile(file, onLog) {
   const log = (m, t) => onLog && onLog(m, t);
   log(`📂 ${file.name}`);
   const text = await file.text();
   log(`${text.length} caractères lus`);
   const cV = extractCVFromText(text, log);
-  if (!cV || !Object.keys(cV).length) {
-    throw new Error('Aucune affectation trouvée dans le HTML. Vérifiez que le fichier contient les données des secteurs (variable JSON code→commercial).');
+  const markers = extractMarkersFromText(text, log);
+  if ((!cV || !Object.keys(cV).length) && !markers.length) {
+    throw new Error('Aucune donnée trouvée dans le HTML (ni secteurs ni marqueurs). Vérifiez le fichier.');
   }
-  const departments = [...new Set(Object.keys(cV).map(c => c.slice(0, 2)))];
-  log(`✅ ${Object.keys(cV).length} communes extraites`, 'ok');
+  const departments = cV && Object.keys(cV).length ? [...new Set(Object.keys(cV).map(c => c.slice(0, 2)))] : [];
+  if (Object.keys(cV || {}).length) log(`✅ ${Object.keys(cV).length} communes extraites`, 'ok');
   const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
-  return { name, cV, departments };
+  return { name, cV: cV || {}, departments, markers };
 }
 
 // Ensure every vendeur in an overlay has a color assigned
@@ -538,6 +607,15 @@ export function parseMapView(json) {
 }
 
 export function parseDepartments(json) {
+  if (!json) return [];
+  try { return JSON.parse(json); } catch { return []; }
+}
+
+export function serializeMarkers(markers) {
+  return JSON.stringify((markers || []).map(m => ({ id: m.id, lat: m.lat, lng: m.lng, name: m.name })));
+}
+
+export function parseMarkers(json) {
   if (!json) return [];
   try { return JSON.parse(json); } catch { return []; }
 }

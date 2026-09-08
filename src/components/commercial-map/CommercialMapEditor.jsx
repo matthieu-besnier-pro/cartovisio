@@ -9,7 +9,7 @@ import {
 import { cn } from '@/lib/utils';
 import {
   PALETTE, TILES, fetchDeptGeo, fetchDeptBoundary, fetchCantons, ensureOverlayColors, syncCV,
-  processExcelFile, processHtmlFile, serializeOverlays, serializeMapView, parseOverlays, parseMapView, parseDepartments,
+  processExcelFile, processHtmlFile, serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers,
 } from '@/lib/commercialMapUtils';
 import LegendSidebar from './LegendSidebar';
 import ImportPanel from './ImportPanel';
@@ -36,6 +36,8 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   const ancCantonLayerRef = useRef(null);
   const allLRef = useRef({});
   const deptLayerRef = useRef(null);
+  const markersLayerRef = useRef(null);
+  const markersRef = useRef([]);
 
   // Refs for layer click handlers (avoid stale closures)
   const editModeRef = useRef(false);
@@ -61,7 +63,8 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sidebarTab, setSidebarTab] = useState('legend');
-  const [layers, setLayers] = useState({ cantons: false, ancCantons: false, departements: false, contours: true });
+  const [layers, setLayers] = useState({ cantons: false, ancCantons: false, departements: false, contours: true, poleAgri: true });
+  const [markers, setMarkers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -76,6 +79,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   useEffect(() => { activeVRef.current = activeV; }, [activeV]);
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
   useEffect(() => { newVendorNameRef.current = newVendorName; }, [newVendorName]);
+  useEffect(() => { markersRef.current = markers; }, [markers]);
 
   const getLayerStyle = useCallback((vendeur, overlayOpacity, state = 'normal') => {
     const s = styleRef.current;
@@ -153,6 +157,27 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       else layer.setStyle(getLayerStyle(vendeur, o.opacity, 'dim'));
     });
   }, [getLayerStyle]);
+
+  const renderMarkers = useCallback(() => {
+    const L = window.L;
+    const map = mapRef.current;
+    if (!map || !L) return;
+    if (!markersLayerRef.current) markersLayerRef.current = L.layerGroup().addTo(map);
+    markersLayerRef.current.clearLayers();
+    if (!layers.poleAgri) return;
+    const icon = L.divIcon({
+      className: 'pa-marker',
+      html: `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#16a34a,#84cc16);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1">🌾</div><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #16a34a"></div></div>`,
+      iconSize: [28, 35],
+      iconAnchor: [14, 35],
+      popupAnchor: [0, -33],
+    });
+    markersRef.current.forEach(mk => {
+      const marker = L.marker([mk.lat, mk.lng], { icon });
+      marker.bindPopup(`<div style="font-family:Inter,system-ui,sans-serif;min-width:140px"><div style="font-weight:700;font-size:13px;color:#0f172a">${escapeHtml(mk.name || 'Pôle Agri')}</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="font-size:12px">🌾</span><span style="font-weight:600;font-size:11px;color:#16a34a;text-transform:uppercase;letter-spacing:.5px">Pôle Agri</span></div></div>`, { className: 'cmap-popup' });
+      markersLayerRef.current.addLayer(marker);
+    });
+  }, [layers.poleAgri]);
 
   const handleEditClick = useCallback((code, nom, currentVendeur) => {
     const action = editActionRef.current;
@@ -267,6 +292,9 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       ovs.forEach(o => ensureOverlayColors(o));
       overlaysRef.current = ovs;
       setOverlays(ovs);
+      const mks = parseMarkers(record?.markers);
+      markersRef.current = mks;
+      setMarkers(mks);
       const depts = parseDepartments(record?.departments);
       if (depts.length) {
         setLoading(true);
@@ -274,6 +302,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         setLoading(false);
       }
       renderAll();
+      renderMarkers();
       // Fit to data if no saved view
       if (!mv && Object.keys(syncCV(ovs).cV).length) {
         try {
@@ -300,6 +329,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   // Re-render layers when overlays or style change
   useEffect(() => { renderAll(); }, [overlays, renderAll]);
   useEffect(() => { renderAll(); }, [style, renderAll]);
+  useEffect(() => { renderMarkers(); }, [markers, renderMarkers]);
 
   // Sync contours toggle with style.bordersOn
   useEffect(() => { setStyle(s => ({ ...s, bordersOn: layers.contours })); }, [layers.contours]);
@@ -367,27 +397,45 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     try {
       const onLog = (msg, type) => setImportLog(prev => [...prev, { msg, type }]);
       const isHtml = /\.(html?|htm)$/i.test(file.name);
-      const { name, cV, departments } = isHtml
+      const res = isHtml
         ? await processHtmlFile(file, onLog)
         : await processExcelFile(file, codeType, onLog);
-      // Load departments
-      onLog(`Chargement de ${departments.length} département(s)...`, '');
+      const { name, cV, departments } = res;
+      const newMarkers = res.markers || [];
+      if (departments.length) onLog(`Chargement de ${departments.length} département(s)...`, '');
       for (const d of departments) await fetchDeptGeo(d, geoDataRef.current, deptLoadedRef.current);
-      const newOverlay = { id: Date.now(), name, cV, vColors: {}, opacity: style.fillOpacity, visible: true };
-      ensureOverlayColors(newOverlay);
-      setOverlays(prev => {
-        const next = [...prev, newOverlay];
-        overlaysRef.current = next;
+      if (newMarkers.length) {
+        setMarkers(prev => {
+          const next = [...prev, ...newMarkers];
+          markersRef.current = next;
+          setTimeout(renderMarkers, 0);
+          return next;
+        });
+      }
+      if (Object.keys(cV).length) {
+        const newOverlay = { id: Date.now(), name, cV, vColors: {}, opacity: style.fillOpacity, visible: true };
+        ensureOverlayColors(newOverlay);
+        setOverlays(prev => {
+          const next = [...prev, newOverlay];
+          overlaysRef.current = next;
+          setTimeout(() => {
+            renderAll();
+            try {
+              const layers = Object.values(allLRef.current).map(x => x.layer);
+              if (layers.length) mapRef.current.fitBounds(window.L.featureGroup(layers).getBounds(), { padding: [30, 30] });
+            } catch (e) {}
+          }, 50);
+          return next;
+        });
+        onLog(`✅ ${Object.keys(cV).length} communes importées`, 'ok');
+      } else if (newMarkers.length) {
         setTimeout(() => {
-          renderAll();
           try {
-            const layers = Object.values(allLRef.current).map(x => x.layer);
-            if (layers.length) mapRef.current.fitBounds(window.L.featureGroup(layers).getBounds(), { padding: [30, 30] });
+            const pts = newMarkers.map(mk => [mk.lat, mk.lng]);
+            if (pts.length) mapRef.current.fitBounds(window.L.latLngBounds(pts), { padding: [50, 50] });
           } catch (e) {}
-        }, 50);
-        return next;
-      });
-      onLog(`✅ ${Object.keys(cV).length} communes importées`, 'ok');
+        }, 60);
+      }
       setSidebarTab('legend');
     } catch (err) {
       setImportLog(prev => [...prev, { msg: `❌ ${err.message}`, type: 'err' }]);
@@ -408,6 +456,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         overlays: serializeOverlays(overlays),
         mapView: serializeMapView(c.lat, c.lng, map.getZoom()),
         departments: JSON.stringify(departments),
+        markers: serializeMarkers(markersRef.current),
       });
       toast({ title: 'Carte enregistrée ✓' });
     } catch (e) {
@@ -468,6 +517,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
 
   const clearAll = () => {
     setOverlays(prev => { overlaysRef.current = []; setTimeout(renderAll, 0); return []; });
+    setMarkers(prev => { markersRef.current = []; setTimeout(renderMarkers, 0); return []; });
     toast({ title: 'Toutes les données effacées' });
   };
 
@@ -607,6 +657,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         onManage={() => setTableOpen(true)}
         onClearAll={clearAll}
         readOnly={readOnly}
+        markerCount={markers.length}
       />
 
       {/* Main */}
@@ -696,6 +747,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         .cmap-popup .leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
         .leaflet-control-zoom a { background: rgba(15,23,42,.9)!important; color: #94a3b8!important; border-color: rgba(148,163,184,.08)!important; border-radius: 10px!important; }
         .leaflet-control-zoom a:hover { background: rgba(51,65,85,.95)!important; color: #e2e8f0!important; }
+        .pa-marker.leaflet-div-icon { background: transparent; border: none; }
       `}</style>
     </div>
   );

@@ -9,7 +9,7 @@ const LAYER_ITEMS = [
   { key: 'contours', color: '#94a3b8', label: 'Contours' },
 ];
 
-export default function LayerPanel({ layers, onToggleLayer, overlays, onManage, onClearAll, readOnly }) {
+export default function LayerPanel({ layers, onToggleLayer, overlays, onManage, onClearAll, readOnly, markerCount = 0 }) {
   const dataOverlays = overlays.filter(o => Object.keys(o.cV || {}).length > 0);
 
   return (
@@ -38,6 +38,19 @@ export default function LayerPanel({ layers, onToggleLayer, overlays, onManage, 
             </button>
           );
         })}
+        {markerCount > 0 && (
+          <button
+            onClick={() => onToggleLayer('poleAgri')}
+            className={cn(
+              'flex items-center gap-2.5 w-full px-2.5 py-2 rounded-lg text-xs font-medium transition-colors text-left',
+              layers.poleAgri ? 'bg-slate-700/60 text-white' : 'text-slate-300 hover:bg-slate-700/30'
+            )}
+          >
+            <span className="text-sm shrink-0" style={{ lineHeight: 1 }}>🌾</span>
+            Pôle Agri
+            <span className="ml-auto text-[10px] font-bold text-lime-300 bg-lime-500/10 px-1.5 py-0.5 rounded">{markerCount}</span>
+          </button>
+        )}
       </div>
 
       <div className="mx-3 border-t border-slate-700/50" />

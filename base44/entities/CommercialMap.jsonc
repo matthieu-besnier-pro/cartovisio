@@ -20,6 +20,10 @@
       "type": "string",
       "description": "JSON string array of department codes loaded"
     },
+    "markers": {
+      "type": "string",
+      "description": "JSON string of markers array [{id,lat,lng,name}]"
+    },
     "shareToken": {
       "type": "string",
       "description": "Unique public share token"
