@@ -9,6 +9,7 @@ import ScrollToTop from './components/ScrollToTop';
 import MapsGallery from '@/pages/MapsGallery';
 import MapEditor from '@/pages/MapEditor';
 import PublicMap from '@/pages/PublicMap';
+import PoleAgriManager from '@/pages/PoleAgriManager';
 // Add page imports here
 
 const AuthenticatedApp = () => {
@@ -41,6 +42,7 @@ const AuthenticatedApp = () => {
       <Route path="/" element={<MapsGallery />} />
       <Route path="/map/:id" element={<MapEditor />} />
       <Route path="/public/:token" element={<PublicMap />} />
+      <Route path="/pole-agri" element={<PoleAgriManager />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

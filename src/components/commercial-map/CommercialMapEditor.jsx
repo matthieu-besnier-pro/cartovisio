@@ -7,6 +7,7 @@ import {
   Plus, Minus, Search, X, ChevronLeft, Undo2, Redo2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { base44 } from '@/api/base44Client';
 import {
   PALETTE, TILES, fetchDeptGeo, fetchDeptBoundary, fetchCantons, ensureOverlayColors, syncCV,
   processExcelFile, processHtmlFile, processJsonFile, processKmlFile, processKmzFile, processGpxFile,
@@ -83,6 +84,8 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   const [sidebarTab, setSidebarTab] = useState('legend');
   const [layers, setLayers] = useState({ cantons: false, ancCantons: false, departements: false, contours: true, poleAgri: true });
   const [markers, setMarkers] = useState([]);
+  const [globalPoints, setGlobalPoints] = useState([]);
+  const globalPointsRef = useRef([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -98,6 +101,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
   useEffect(() => { newVendorNameRef.current = newVendorName; }, [newVendorName]);
   useEffect(() => { markersRef.current = markers; }, [markers]);
+  useEffect(() => { globalPointsRef.current = globalPoints; }, [globalPoints]);
 
   const getLayerStyle = useCallback((vendeur, overlayOpacity, state = 'normal') => {
     const s = styleRef.current;
@@ -224,7 +228,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       iconAnchor: [14, 35],
       popupAnchor: [0, -33],
     });
-    markersRef.current.forEach(mk => {
+    [...markersRef.current, ...globalPointsRef.current].forEach(mk => {
       const marker = L.marker([mk.lat, mk.lng], { icon });
       marker.bindPopup(`<div style="font-family:Inter,system-ui,sans-serif;min-width:140px"><div style="font-weight:700;font-size:13px;color:#0f172a">${escapeHtml(mk.name || 'Pôle Agri')}</div><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="font-size:12px">🌾</span><span style="font-weight:600;font-size:11px;color:#16a34a;text-transform:uppercase;letter-spacing:.5px">Pôle Agri</span></div></div>`, { className: 'cmap-popup' });
       markersLayerRef.current.addLayer(marker);
@@ -355,6 +359,12 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       }
       renderAll();
       renderMarkers();
+      // Load global Pôle Agri points (shared layer across all maps)
+      base44.entities.PoleAgriPoint.list('-updated_date', 5000).then(pts => {
+        globalPointsRef.current = pts || [];
+        setGlobalPoints(pts || []);
+        renderMarkers();
+      }).catch(() => {});
       // Fit to data if no saved view
       if (!mv && Object.keys(syncCV(ovs).cV).length) {
         try {
@@ -735,7 +745,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         onManage={() => setTableOpen(true)}
         onClearAll={clearAll}
         readOnly={readOnly}
-        markerCount={markers.length}
+        markerCount={markers.length + globalPoints.length}
       />
 
       {/* Main */}
@@ -810,6 +820,12 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       {loading && (
         <div className="absolute bottom-8 right-[330px] z-[500] bg-slate-950/85 backdrop-blur text-slate-400 text-xs px-4 py-2 rounded-lg border border-slate-800/60 flex items-center gap-2">
           <div className="w-3.5 h-3.5 border-2 border-slate-600 border-t-slate-300 rounded-full animate-spin" /> Chargement...
+        </div>
+      )}
+
+      {readOnly && (
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-[500] text-[10px] text-slate-400/80 bg-slate-950/60 backdrop-blur px-3 py-1 rounded-full border border-slate-800/50 pointer-events-none whitespace-nowrap">
+          Pôle Agricole · Groupe Dubreuil
         </div>
       )}
 

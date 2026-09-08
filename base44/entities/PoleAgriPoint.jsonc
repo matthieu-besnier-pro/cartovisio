@@ -1,0 +1,23 @@
+{
+  "name": "PoleAgriPoint",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "lat": {
+      "type": "number"
+    },
+    "lng": {
+      "type": "number"
+    },
+    "address": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "lat",
+    "lng"
+  ]
+}

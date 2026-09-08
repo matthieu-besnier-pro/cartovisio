@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2 } from 'lucide-react';
+import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin } from 'lucide-react';
 import { syncCV, genShareToken } from '@/lib/commercialMapUtils';
 
 export default function MapsGallery() {
@@ -94,6 +94,9 @@ export default function MapsGallery() {
             <Button onClick={() => setCreateOpen(true)} className="gap-2 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 shadow-lg shadow-rose-500/25">
               <Plus className="w-4 h-4" /> Créer une carte
             </Button>
+            <Button variant="outline" onClick={() => navigate('/pole-agri')} className="gap-2 border-slate-700 bg-slate-800/40 text-slate-200 hover:bg-slate-700/40">
+              <MapPin className="w-4 h-4" /> Points Pôle Agri
+            </Button>
             <div className="flex items-center gap-4 text-xs text-slate-500">
               <span className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Liens publics</span>
               <span className="flex items-center gap-1.5"><MapIcon className="w-3.5 h-3.5" /> {maps.length} carte{maps.length > 1 ? 's' : ''}</span>
@@ -168,6 +171,9 @@ export default function MapsGallery() {
           </div>
         )}
       </div>
+
+      {/* Branding footer */}
+      <p className="text-center text-xs text-slate-600 pb-8 max-w-6xl mx-auto px-6">Outil développé par le Service Marketing du Pôle Agricole du Groupe Dubreuil</p>
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
