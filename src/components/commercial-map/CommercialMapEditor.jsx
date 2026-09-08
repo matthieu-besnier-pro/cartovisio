@@ -4,12 +4,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   MapPin, Pencil, Table2, Download, Settings2, Save, Share2, Eye,
-  Plus, Minus, Search, X, ChevronLeft,
+  Plus, Minus, Search, X, ChevronLeft, Undo2, Redo2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   PALETTE, TILES, fetchDeptGeo, fetchDeptBoundary, fetchCantons, ensureOverlayColors, syncCV,
-  processExcelFile, processHtmlFile, serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers,
+  processExcelFile, processHtmlFile, processJsonFile, processKmlFile, processKmzFile, processGpxFile,
+  serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers,
 } from '@/lib/commercialMapUtils';
 import LegendSidebar from './LegendSidebar';
 import ImportPanel from './ImportPanel';
@@ -48,7 +49,24 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   const activeVRef = useRef(null);
   const readOnlyRef = useRef(readOnly);
 
-  const [overlays, setOverlays] = useState([]);
+  const [overlays, setOverlaysRaw] = useState([]);
+  const historyRef = useRef([]);
+  const futureRef = useRef([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  // History-aware setter: snapshots current overlays before each user edit.
+  const setOverlaysHist = useCallback((updater) => {
+    const prev = overlaysRef.current;
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    historyRef.current.push(prev);
+    if (historyRef.current.length > 60) historyRef.current.shift();
+    futureRef.current = [];
+    overlaysRef.current = next;
+    setCanUndo(historyRef.current.length > 0);
+    setCanRedo(false);
+    setOverlaysRaw(next);
+  }, []);
   const [activeV, setActiveV] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editVendor, setEditVendor] = useState('');
@@ -149,6 +167,40 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     return n;
   }, [getLayerStyle]);
 
+  const undo = useCallback(() => {
+    if (!historyRef.current.length) return;
+    const past = historyRef.current.pop();
+    futureRef.current.push(overlaysRef.current);
+    overlaysRef.current = past;
+    setCanUndo(historyRef.current.length > 0);
+    setCanRedo(true);
+    setOverlaysRaw(past);
+    setTimeout(renderAll, 0);
+  }, [renderAll]);
+
+  const redo = useCallback(() => {
+    if (!futureRef.current.length) return;
+    const next = futureRef.current.pop();
+    historyRef.current.push(overlaysRef.current);
+    overlaysRef.current = next;
+    setCanUndo(true);
+    setCanRedo(futureRef.current.length > 0);
+    setOverlaysRaw(next);
+    setTimeout(renderAll, 0);
+  }, [renderAll]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (readOnlyRef.current) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
+
   const applyActiveV = useCallback((name) => {
     Object.entries(allLRef.current).forEach(([code, { layer, vendeur }]) => {
       const o = overlaysRef.current.find(o => o.visible && o.cV?.[code]);
@@ -182,7 +234,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   const handleEditClick = useCallback((code, nom, currentVendeur) => {
     const action = editActionRef.current;
     if (action === 'remove') {
-      setOverlays(prev => {
+      setOverlaysHist(prev => {
         const next = prev.map(o => { const cV = { ...o.cV }; delete cV[code]; return { ...o, cV }; });
         overlaysRef.current = next;
         setTimeout(renderAll, 0);
@@ -194,7 +246,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       let vendeur = sel === '__new__' ? newVendorNameRef.current.trim() : sel;
       if (!vendeur) { toast({ title: 'Choisissez un commercial', variant: 'destructive' }); return; }
       if (currentVendeur === vendeur) { toast({ title: `Déjà assignée à ${vendeur}` }); return; }
-      setOverlays(prev => {
+      setOverlaysHist(prev => {
         let next = [...prev];
         if (!next.length) next.push({ id: Date.now(), name: 'Secteurs', cV: {}, vColors: {}, opacity: styleRef.current.fillOpacity, visible: true });
         next = next.map((o, i) => {
@@ -223,7 +275,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       const nom = btn.dataset.nom;
       map.closePopup();
       if (action === 'remove') {
-        setOverlays(prev => {
+        setOverlaysHist(prev => {
           const next = prev.map(o => { const cV = { ...o.cV }; delete cV[code]; return { ...o, cV }; });
           overlaysRef.current = next;
           setTimeout(renderAll, 0);
@@ -291,7 +343,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       const ovs = parseOverlays(record?.overlays);
       ovs.forEach(o => ensureOverlayColors(o));
       overlaysRef.current = ovs;
-      setOverlays(ovs);
+      setOverlaysRaw(ovs);
       const mks = parseMarkers(record?.markers);
       markersRef.current = mks;
       setMarkers(mks);
@@ -396,10 +448,30 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     setImportLog([]);
     try {
       const onLog = (msg, type) => setImportLog(prev => [...prev, { msg, type }]);
-      const isHtml = /\.(html?|htm)$/i.test(file.name);
-      const res = isHtml
-        ? await processHtmlFile(file, onLog)
-        : await processExcelFile(file, codeType, onLog);
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      let res;
+      if (['html', 'htm', 'xhtml'].includes(ext)) {
+        res = await processHtmlFile(file, onLog);
+      } else if (['xlsx', 'xls', 'csv', 'tsv'].includes(ext)) {
+        let f = file;
+        if (ext === 'csv' || ext === 'tsv') {
+          const txt = await file.text();
+          const semi = (txt.match(/;/g) || []).length;
+          const comma = (txt.match(/,/g) || []).length;
+          if (semi > comma) f = new File([txt.replace(/;/g, ',')], file.name, { type: 'text/csv' });
+        }
+        res = await processExcelFile(f, codeType, onLog);
+      } else if (['json', 'geojson'].includes(ext)) {
+        res = await processJsonFile(file, onLog);
+      } else if (ext === 'kml') {
+        res = await processKmlFile(file, onLog);
+      } else if (ext === 'kmz') {
+        res = await processKmzFile(file, onLog);
+      } else if (ext === 'gpx') {
+        res = await processGpxFile(file, onLog);
+      } else {
+        throw new Error('Format non supporté : .' + ext);
+      }
       const { name, cV, departments } = res;
       const newMarkers = res.markers || [];
       if (departments.length) onLog(`Chargement de ${departments.length} département(s)...`, '');
@@ -415,7 +487,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       if (Object.keys(cV).length) {
         const newOverlay = { id: Date.now(), name, cV, vColors: {}, opacity: style.fillOpacity, visible: true };
         ensureOverlayColors(newOverlay);
-        setOverlays(prev => {
+        setOverlaysHist(prev => {
           const next = [...prev, newOverlay];
           overlaysRef.current = next;
           setTimeout(() => {
@@ -488,10 +560,10 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     else mapRef.current.setView([46.8, -0.5], 8);
   };
 
-  const toggleOverlayVisible = (id) => setOverlays(prev => { const next = prev.map(o => o.id === id ? { ...o, visible: !o.visible } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
-  const removeOverlay = (id) => setOverlays(prev => { const next = prev.filter(o => o.id !== id); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
-  const changeOpacity = (id, val) => setOverlays(prev => { const next = prev.map(o => o.id === id ? { ...o, opacity: parseInt(val) / 100 } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
-  const changeColor = (id, vendeur, c) => setOverlays(prev => { const next = prev.map(o => o.id === id ? { ...o, vColors: { ...o.vColors, [vendeur]: c } } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
+  const toggleOverlayVisible = (id) => setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, visible: !o.visible } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
+  const removeOverlay = (id) => setOverlaysHist(prev => { const next = prev.filter(o => o.id !== id); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
+  const changeOpacity = (id, val) => setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, opacity: parseInt(val) / 100 } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
+  const changeColor = (id, vendeur, c) => setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, vColors: { ...o.vColors, [vendeur]: c } } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
 
   const tableChangeVendeur = (code, vendeur) => {
     if (vendeur === '__new__') {
@@ -499,7 +571,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       if (!v || !v.trim()) return;
       vendeur = v.trim();
     }
-    setOverlays(prev => {
+    setOverlaysHist(prev => {
       let next = [...prev];
       if (!next.length) next.push({ id: Date.now(), name: 'Secteurs', cV: {}, vColors: {}, opacity: style.fillOpacity, visible: true });
       next = next.map((o, i) => {
@@ -513,10 +585,10 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     });
     toast({ title: `"${geoDataRef.current[code]?.properties?.nom || code}" → ${vendeur}` });
   };
-  const tableRemove = (code) => setOverlays(prev => { const next = prev.map(o => { const cV = { ...o.cV }; delete cV[code]; return { ...o, cV }; }); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
+  const tableRemove = (code) => setOverlaysHist(prev => { const next = prev.map(o => { const cV = { ...o.cV }; delete cV[code]; return { ...o, cV }; }); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
 
   const clearAll = () => {
-    setOverlays(prev => { overlaysRef.current = []; setTimeout(renderAll, 0); return []; });
+    setOverlaysHist(prev => { overlaysRef.current = []; setTimeout(renderAll, 0); return []; });
     setMarkers(prev => { markersRef.current = []; setTimeout(renderMarkers, 0); return []; });
     toast({ title: 'Toutes les données effacées' });
   };
@@ -546,7 +618,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         const vendeur = action.vendor?.trim();
         if (!vendeur) { toast({ title: 'Commercial manquant', variant: 'destructive' }); return; }
         const nom = geoDataRef.current[code].properties?.nom || code;
-        setOverlays(prev => {
+        setOverlaysHist(prev => {
           let next = [...prev];
           if (!next.length) next.push({ id: Date.now(), name: 'Secteurs', cV: {}, vColors: {}, opacity: styleRef.current.fillOpacity, visible: true });
           next = next.map((o, i) => {
@@ -573,7 +645,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         const oldName = action.vendor?.trim();
         const newName = action.newName?.trim();
         if (!oldName || !newName) return;
-        setOverlays(prev => {
+        setOverlaysHist(prev => {
           const next = prev.map(o => {
             const cV = {}; Object.entries(o.cV || {}).forEach(([c, v]) => { cV[c] = v === oldName ? newName : v; });
             const vColors = {}; Object.entries(o.vColors || {}).forEach(([v, col]) => { vColors[v === oldName ? newName : v] = col; });
@@ -627,6 +699,12 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         </div>
         <div className="flex items-center gap-0.5">
           <IconBtn onClick={resetView} title="Vue globale"><MapPin className="w-4 h-4" /></IconBtn>
+          {!readOnly && (
+            <>
+              <IconBtn onClick={undo} title="Annuler (Ctrl+Z)" disabled={!canUndo}><Undo2 className="w-4 h-4" /></IconBtn>
+              <IconBtn onClick={redo} title="Rétablir (Ctrl+Y)" disabled={!canRedo}><Redo2 className="w-4 h-4" /></IconBtn>
+            </>
+          )}
           {!readOnly && (
             <IconBtn onClick={() => setEditMode(!editMode)} active={editMode} title="Éditer communes"><Pencil className="w-4 h-4" /></IconBtn>
           )}
@@ -753,9 +831,9 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   );
 }
 
-function IconBtn({ children, onClick, title, active }) {
+function IconBtn({ children, onClick, title, active, disabled }) {
   return (
-    <button onClick={onClick} title={title} className={cn('w-9 h-9 flex items-center justify-center rounded-lg transition-colors', active ? 'bg-violet-500/20 text-violet-300' : 'text-slate-500 hover:bg-slate-800/60 hover:text-slate-200')}>
+    <button onClick={onClick} title={title} disabled={disabled} className={cn('w-9 h-9 flex items-center justify-center rounded-lg transition-colors disabled:opacity-30 disabled:pointer-events-none', active ? 'bg-violet-500/20 text-violet-300' : 'text-slate-500 hover:bg-slate-800/60 hover:text-slate-200')}>
       {children}
     </button>
   );

@@ -414,6 +414,169 @@ export async function processExcelFile(file, codeType = 'auto', onLog) {
   return { name, cV: nd, departments };
 }
 
+// ── JSON import ──
+export async function processJsonFile(file, onLog) {
+  const log = (m, t) => onLog && onLog(m, t);
+  log(`📂 ${file.name}`);
+  const text = await file.text();
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (e) { throw new Error('JSON invalide : ' + e.message); }
+  const cV = {};
+  const markers = [];
+  const addMarker = (lat, lng, name) => {
+    const la = parseFloat(lat), ln = parseFloat(lng);
+    if (isNaN(la) || isNaN(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return;
+    markers.push({ id: 'pa_' + markers.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim() });
+  };
+  const tryRow = (row) => {
+    if (!row || typeof row !== 'object') return;
+    const code = String(row.code || row.code_insee || row.insee || row.commune || '').trim().replace(/\.0$/, '').padStart(5, '0');
+    const vendeur = String(row.vendeur || row.commercial || row.secteur || row.value || '').trim();
+    if (/^[0-9A-Z]{5}$/.test(code) && vendeur && !/^\d+$/.test(vendeur)) cV[code] = vendeur;
+    const lat = row.lat ?? row.latitude;
+    const lng = row.lng ?? row.lon ?? row.longitude;
+    if (lat != null && lng != null) addMarker(lat, lng, row.name || row.nom || row.title || '');
+  };
+  if (Array.isArray(parsed)) {
+    parsed.forEach(tryRow);
+  } else if (parsed && parsed.type === 'FeatureCollection' && Array.isArray(parsed.features)) {
+    parsed.features.forEach(f => {
+      const g = f.geometry || {};
+      const props = f.properties || {};
+      if (g.type === 'Point') {
+        const [lng, lat] = g.coordinates || [];
+        addMarker(lat, lng, props.name || props.nom || props.title || '');
+      } else if (props.vendeur || props.commercial) {
+        const code = String(props.code || props.code_insee || props.insee || '').trim().replace(/\.0$/, '').padStart(5, '0');
+        if (/^[0-9A-Z]{5}$/.test(code)) cV[code] = String(props.vendeur || props.commercial).trim();
+      }
+    });
+  } else if (parsed && typeof parsed === 'object') {
+    let score = 0;
+    for (const [k, v] of Object.entries(parsed)) {
+      const code = String(k).trim().replace(/\.0$/, '').padStart(5, '0');
+      if (/^[0-9A-Z]{5}$/.test(code) && typeof v === 'string' && v.trim() && !/^\d+$/.test(v.trim())) { cV[code] = v.trim(); score++; }
+    }
+    if (!score) {
+      for (const key of ['markers', 'points', 'data', 'communes']) {
+        if (Array.isArray(parsed[key])) { parsed[key].forEach(tryRow); break; }
+      }
+    }
+  }
+  if (!Object.keys(cV).length && !markers.length) throw new Error('Aucune donnée exploitable dans le JSON (secteurs ou marqueurs).');
+  if (Object.keys(cV).length) log(`✅ ${Object.keys(cV).length} communes`, 'ok');
+  if (markers.length) log(`📍 ${markers.length} marqueurs`, 'ok');
+  const departments = Object.keys(cV).length ? [...new Set(Object.keys(cV).map(c => c.slice(0, 2)))] : [];
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+  return { name, cV, departments, markers };
+}
+
+// ── KML / KMZ / GPX import (markers) ──
+function extractKmlMarkers(text, log) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const out = [];
+  const seen = new Set();
+  const add = (lat, lng, name) => {
+    const la = parseFloat(lat), ln = parseFloat(lng);
+    if (isNaN(la) || isNaN(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return;
+    const key = `${la.toFixed(4)},${ln.toFixed(4)}`;
+    if (seen.has(key)) return; seen.add(key);
+    out.push({ id: 'pa_' + out.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim() });
+  };
+  const placemarks = doc.getElementsByTagName('Placemark');
+  for (const pm of Array.from(placemarks)) {
+    const name = pm.getElementsByTagName('name')[0]?.textContent?.trim() || '';
+    const points = pm.getElementsByTagName('Point');
+    for (const pt of Array.from(points)) {
+      const coords = pt.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+      if (!coords) continue;
+      const first = coords.split(/\s+/)[0].split(',');
+      add(first[1], first[0], name);
+    }
+  }
+  if (out.length && log) log(`📍 ${out.length} marqueurs extraits du KML`, 'ok');
+  return out;
+}
+
+export async function processKmlFile(file, onLog) {
+  const log = (m, t) => onLog && onLog(m, t);
+  log(`📂 ${file.name}`);
+  const text = await file.text();
+  const markers = extractKmlMarkers(text, log);
+  if (!markers.length) throw new Error('Aucun point (Placemark/Point) trouvé dans le KML.');
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+  return { name, cV: {}, departments: [], markers };
+}
+
+async function inflateRaw(chunk) {
+  const ds = new DecompressionStream('deflate-raw');
+  const writer = ds.writable.getWriter();
+  const reader = ds.readable.getReader();
+  writer.write(chunk);
+  writer.close();
+  const parts = [];
+  let r;
+  while (!(r = await reader.read()).done) parts.push(r.value);
+  return new Blob(parts).text();
+}
+
+async function extractKmlFromKmz(buf) {
+  const view = new DataView(buf);
+  let off = 0;
+  while (off < buf.byteLength - 30) {
+    if (view.getUint32(off, true) !== 0x04034b50) break;
+    const method = view.getUint16(off + 8, true);
+    const compSize = view.getUint32(off + 18, true);
+    const fnLen = view.getUint16(off + 26, true);
+    const extraLen = view.getUint16(off + 28, true);
+    const fnStart = off + 30;
+    const name = new TextDecoder().decode(new Uint8Array(buf, fnStart, fnLen)).toLowerCase();
+    const dataStart = fnStart + fnLen + extraLen;
+    const dataEnd = dataStart + compSize;
+    if (name.endsWith('.kml')) {
+      if (method === 0) return new TextDecoder().decode(new Uint8Array(buf, dataStart, compSize));
+      if (method === 8 && typeof DecompressionStream !== 'undefined') return await inflateRaw(new Uint8Array(buf, dataStart, compSize));
+      throw new Error('KMZ compressé non lisible par ce navigateur.');
+    }
+    off = dataEnd;
+  }
+  return null;
+}
+
+export async function processKmzFile(file, onLog) {
+  const log = (m, t) => onLog && onLog(m, t);
+  log(`📂 ${file.name}`);
+  const buf = await file.arrayBuffer();
+  const kmlText = await extractKmlFromKmz(buf);
+  if (!kmlText) throw new Error('Aucun fichier .kml trouvé dans le KMZ.');
+  const markers = extractKmlMarkers(kmlText, log);
+  if (!markers.length) throw new Error('Aucun point trouvé dans le KMZ.');
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+  return { name, cV: {}, departments: [], markers };
+}
+
+export async function processGpxFile(file, onLog) {
+  const log = (m, t) => onLog && onLog(m, t);
+  log(`📂 ${file.name}`);
+  const text = await file.text();
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const out = [];
+  const seen = new Set();
+  for (const w of Array.from(doc.getElementsByTagName('wpt'))) {
+    const la = parseFloat(w.getAttribute('lat'));
+    const ln = parseFloat(w.getAttribute('lon'));
+    if (isNaN(la) || isNaN(ln)) continue;
+    const key = `${la.toFixed(4)},${ln.toFixed(4)}`;
+    if (seen.has(key)) continue; seen.add(key);
+    const name = w.getElementsByTagName('name')[0]?.textContent?.trim() || '';
+    out.push({ id: 'pa_' + out.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim() });
+  }
+  if (out.length && log) log(`📍 ${out.length} marqueurs extraits du GPX`, 'ok');
+  if (!out.length) throw new Error('Aucun waypoint (<wpt>) trouvé dans le GPX.');
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+  return { name, cV: {}, departments: [], markers: out };
+}
+
 // ── Export helpers ──
 
 function mercY(lat) { return Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)); }

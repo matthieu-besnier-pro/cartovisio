@@ -68,6 +68,18 @@ export default function ImportPanel({ onImport, importLog, loading }) {
             Importez un ancien fichier de carte HTML — les affectations code→commercial intégrées sont extraites automatiquement.
           </p>
         </div>
+        <div className="border-t border-slate-700/40 pt-2">
+          <h4 className="text-[11px] text-amber-400 font-bold uppercase tracking-wider mb-1.5">JSON / GeoJSON</h4>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Objet <span className="text-sky-300">code → commercial</span>, tableau de lignes (code + vendeur), ou GeoJSON : les points deviennent des marqueurs, les polygones avec propriété « vendeur » des secteurs.
+          </p>
+        </div>
+        <div className="border-t border-slate-700/40 pt-2">
+          <h4 className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider mb-1.5">KML / KMZ / GPX</h4>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Fichiers géographiques de points — les Placemark (KML/KMZ) et waypoints (GPX) sont importés comme marqueurs Pôle Agri.
+          </p>
+        </div>
       </div>
     </div>
   );
