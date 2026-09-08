@@ -11,7 +11,7 @@ import { base44 } from '@/api/base44Client';
 import {
   PALETTE, TILES, fetchDeptGeo, fetchDeptBoundary, fetchCantons, ensureOverlayColors, syncCV,
   processExcelFile, processHtmlFile, processJsonFile, processKmlFile, processKmzFile, processGpxFile,
-  serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers, categoryColor,
+  serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers, categoryColor, storeLargeField, readFieldContent,
 } from '@/lib/commercialMapUtils';
 import LegendSidebar from './LegendSidebar';
 import ImportPanel from './ImportPanel';
@@ -348,11 +348,11 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
 
     // Load initial overlays + departments
     const init = async () => {
-      const ovs = parseOverlays(record?.overlays);
+      const ovs = parseOverlays(await readFieldContent(record?.overlays));
       ovs.forEach(o => ensureOverlayColors(o));
       overlaysRef.current = ovs;
       setOverlaysRaw(ovs);
-      const mks = parseMarkers(record?.markers);
+      const mks = parseMarkers(await readFieldContent(record?.markers));
       markersRef.current = mks;
       setMarkers(mks);
       const depts = parseDepartments(record?.departments);
@@ -539,10 +539,10 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       const c = map.getCenter();
       const departments = [...deptLoadedRef.current];
       await onSave({
-        overlays: serializeOverlays(overlays),
+        overlays: await storeLargeField(serializeOverlays(overlays), 'overlays.json'),
         mapView: serializeMapView(c.lat, c.lng, map.getZoom()),
         departments: JSON.stringify(departments),
-        markers: serializeMarkers(markersRef.current),
+        markers: await storeLargeField(serializeMarkers(markersRef.current), 'markers.json'),
       });
       toast({ title: 'Carte enregistrée ✓' });
     } catch (e) {

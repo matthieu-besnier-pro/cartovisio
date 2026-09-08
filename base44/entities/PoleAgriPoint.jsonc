@@ -14,6 +14,12 @@
     "address": {
       "type": "string"
     },
+    "postalCode": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
     "category": {
       "type": "string",
       "description": "Layer/group name (e.g. Gonnin-Duris, AGRI SANTERRE, SICLOE...)"

@@ -1,5 +1,7 @@
 // Shared utilities for commercial sector maps
 
+import { base44 } from '@/api/base44Client';
+
 export const PALETTE = [
   "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFD93D", "#C77DFF",
   "#FF8C42", "#6C5CE7", "#00B894", "#E17055", "#74B9FF", "#A29BFE",
@@ -14,6 +16,22 @@ export function categoryColor(cat) {
   if (_catColorMap[cat]) return _catColorMap[cat];
   _catColorMap[cat] = CATEGORY_PALETTE[Object.keys(_catColorMap).length % CATEGORY_PALETTE.length];
   return _catColorMap[cat];
+}
+
+// Large JSON fields are stored as uploaded files to respect entity field size limits
+const FIELD_INLINE_LIMIT = 40000;
+export async function storeLargeField(value, filename) {
+  if (!value || value.length <= FIELD_INLINE_LIMIT) return value;
+  const file = new File([new Blob([value], { type: 'application/json' })], filename, { type: 'application/json' });
+  const { file_url } = await base44.integrations.Core.UploadFile({ file });
+  return file_url;
+}
+export async function readFieldContent(value) {
+  if (!value) return '';
+  if (value.startsWith('http')) {
+    try { const r = await fetch(value); return await r.text(); } catch { return ''; }
+  }
+  return value;
 }
 
 export const DEPT_SLUGS = {
@@ -432,10 +450,10 @@ export async function processJsonFile(file, onLog) {
   try { parsed = JSON.parse(text); } catch (e) { throw new Error('JSON invalide : ' + e.message); }
   const cV = {};
   const markers = [];
-  const addMarker = (lat, lng, name, category) => {
+  const addMarker = (lat, lng, name, category, postalCode, city) => {
     const la = parseFloat(lat), ln = parseFloat(lng);
     if (isNaN(la) || isNaN(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return;
-    markers.push({ id: 'pa_' + markers.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim(), category: (category || '').trim() });
+    markers.push({ id: 'pa_' + markers.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim(), category: (category || '').trim(), postalCode: (postalCode || '').trim(), city: (city || '').trim() });
   };
   const tryRow = (row) => {
     if (!row || typeof row !== 'object') return;
@@ -444,7 +462,7 @@ export async function processJsonFile(file, onLog) {
     if (/^[0-9A-Z]{5}$/.test(code) && vendeur && !/^\d+$/.test(vendeur)) cV[code] = vendeur;
     const lat = row.lat ?? row.latitude;
     const lng = row.lng ?? row.lon ?? row.longitude;
-    if (lat != null && lng != null) addMarker(lat, lng, row.name || row.nom || row.title || '', row.category || row.folder || row.layer || row.groupe || '');
+    if (lat != null && lng != null) addMarker(lat, lng, row.name || row.nom || row.title || '', row.category || row.folder || row.layer || row.groupe || '', row.postalCode || row.cp || row.codePostal || row.zip || '', row.city || row.ville || row.commune || row.localite || '');
   };
   if (Array.isArray(parsed)) {
     parsed.forEach(tryRow);
@@ -454,7 +472,7 @@ export async function processJsonFile(file, onLog) {
       const props = f.properties || {};
       if (g.type === 'Point') {
         const [lng, lat] = g.coordinates || [];
-        addMarker(lat, lng, props.name || props.nom || props.title || '', props.category || props.folder || props.layer || props.groupe || '');
+        addMarker(lat, lng, props.name || props.nom || props.title || '', props.category || props.folder || props.layer || props.groupe || '', props.postalCode || props.cp || props.codePostal || props.zip || '', props.city || props.ville || props.commune || props.localite || '');
       } else if (props.vendeur || props.commercial) {
         const code = String(props.code || props.code_insee || props.insee || '').trim().replace(/\.0$/, '').padStart(5, '0');
         if (/^[0-9A-Z]{5}$/.test(code)) cV[code] = String(props.vendeur || props.commercial).trim();
@@ -481,16 +499,44 @@ export async function processJsonFile(file, onLog) {
 }
 
 // ── KML / KMZ / GPX import (markers) ──
+function _normKey(s) {
+  return (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+}
+function parseKmlAddress(pm) {
+  let postalCode = '', city = '', address = '';
+  const ed = pm.getElementsByTagName('ExtendedData')[0];
+  if (ed) {
+    for (const d of Array.from(ed.getElementsByTagName('Data'))) {
+      const nm = _normKey(d.getAttribute('name') || '');
+      const val = (d.getElementsByTagName('value')[0]?.textContent || '').trim();
+      if (!val) continue;
+      if (/postal|cp|codepostal|zipcode|zip/.test(nm)) postalCode = val;
+      else if (/ville|commune|city|localite/.test(nm)) city = val;
+      else if (/adresse|address|rue/.test(nm)) address = val;
+    }
+  }
+  if (!address && !postalCode && !city) {
+    const desc = pm.getElementsByTagName('description')[0]?.textContent || '';
+    const text = desc.replace(/<[^>]+>/g, ' ').replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim();
+    if (text) address = text;
+  }
+  if (address && (!postalCode || !city)) {
+    const m = address.match(/\b(\d{5})\b\s+([^,;\n]+)/);
+    if (m) { if (!postalCode) postalCode = m[1]; if (!city) city = m[2].trim(); }
+  }
+  if (postalCode && /^\d+$/.test(postalCode) && postalCode.length < 5) postalCode = postalCode.padStart(5, '0');
+  return { postalCode, city, address };
+}
 function extractKmlMarkers(text, log) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   const out = [];
   const seen = new Set();
-  const add = (lat, lng, name, category) => {
+  const add = (lat, lng, name, category, postalCode, city, address) => {
     const la = parseFloat(lat), ln = parseFloat(lng);
     if (isNaN(la) || isNaN(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return;
     const key = `${la.toFixed(4)},${ln.toFixed(4)}`;
     if (seen.has(key)) return; seen.add(key);
-    out.push({ id: 'pa_' + out.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim(), category: (category || '').trim() });
+    out.push({ id: 'pa_' + out.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim(), category: (category || '').trim(), postalCode: (postalCode || '').trim(), city: (city || '').trim(), address: (address || '').trim() });
   };
   const folderNameOf = (pm) => {
     let el = pm.parentElement;
@@ -507,12 +553,13 @@ function extractKmlMarkers(text, log) {
   for (const pm of Array.from(placemarks)) {
     const name = pm.getElementsByTagName('name')[0]?.textContent?.trim() || '';
     const category = folderNameOf(pm);
+    const { postalCode, city, address } = parseKmlAddress(pm);
     const points = pm.getElementsByTagName('Point');
     for (const pt of Array.from(points)) {
       const coords = pt.getElementsByTagName('coordinates')[0]?.textContent?.trim();
       if (!coords) continue;
       const first = coords.split(/\s+/)[0].split(',');
-      add(first[1], first[0], name, category);
+      add(first[1], first[0], name, category, postalCode, city, address);
     }
   }
   if (out.length && log) log(`📍 ${out.length} marqueurs extraits du KML`, 'ok');
@@ -607,6 +654,74 @@ export async function processGpxFile(file, onLog) {
   if (!out.length) throw new Error('Aucun waypoint (<wpt>) trouvé dans le GPX.');
   const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
   return { name, cV: {}, departments: [], markers: out };
+}
+
+// ── Points spreadsheet import (CSV / XLSX / JSON) ──
+export async function processPointsFile(file, onLog) {
+  const log = (m, t) => onLog && onLog(m, t);
+  log(`📂 ${file.name}`);
+  const ext = (file.name.split('.').pop() || '').toLowerCase();
+  const norm = (s) => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+  const findCol = (headers, ...names) => {
+    const targets = names.map(norm);
+    return headers.findIndex(h => targets.includes(norm(h)));
+  };
+  if (ext === 'json' || ext === 'geojson') {
+    const res = await processJsonFile(file, onLog);
+    return { name: res.name, markers: res.markers };
+  }
+  let rows = [];
+  if (ext === 'csv' || ext === 'tsv' || ext === 'xlsx' || ext === 'xls') {
+    const XLSX = window.XLSX;
+    let wb;
+    if (ext === 'xlsx' || ext === 'xls') {
+      wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+    } else {
+      let text = await file.text();
+      if (ext === 'csv' && (text.match(/;/g) || []).length > (text.match(/,/g) || []).length) text = text.replace(/;/g, ',');
+      wb = XLSX.read(text, { type: 'string' });
+    }
+    rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+  } else {
+    throw new Error('Format non supporté pour les points : .' + ext);
+  }
+  if (!rows.length) throw new Error('Fichier vide');
+  const headers = (rows[0] || []).map(h => String(h == null ? '' : h));
+  const iName = findCol(headers, 'nom', 'name', 'libelle', 'point', 'base', 'enseigne', 'titre', 'title');
+  const iLat = findCol(headers, 'lat', 'latitude', 'y');
+  const iLng = findCol(headers, 'lng', 'lon', 'long', 'longitude', 'x');
+  const iCp = findCol(headers, 'cp', 'codepostal', 'zipcode', 'zip', 'postal');
+  const iCity = findCol(headers, 'ville', 'city', 'commune', 'localite');
+  const iCat = findCol(headers, 'categorie', 'category', 'groupe', 'folder', 'layer', 'couche', 'enseigne', 'reseau');
+  const iAddr = findCol(headers, 'adresse', 'address', 'rue');
+  if (iLat < 0 || iLng < 0) throw new Error('Colonnes Latitude/Longitude introuvables dans le fichier');
+  const markers = [];
+  const seen = new Set();
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row) continue;
+    const lat = parseFloat(row[iLat]);
+    const lng = parseFloat(row[iLng]);
+    if (isNaN(lat) || isNaN(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let cp = iCp >= 0 ? String(row[iCp] == null ? '' : row[iCp]).trim() : '';
+    if (/^\d+$/.test(cp) && cp.length < 5) cp = cp.padStart(5, '0');
+    markers.push({
+      id: 'pa_' + markers.length + '_' + Math.random().toString(36).slice(2, 6),
+      lat, lng,
+      name: (iName >= 0 ? String(row[iName] == null ? '' : row[iName]) : '').trim() || 'Pôle Agri',
+      postalCode: cp,
+      city: iCity >= 0 ? String(row[iCity] == null ? '' : row[iCity]).trim() : '',
+      category: iCat >= 0 ? String(row[iCat] == null ? '' : row[iCat]).trim() : '',
+      address: iAddr >= 0 ? String(row[iAddr] == null ? '' : row[iAddr]).trim() : '',
+    });
+  }
+  if (!markers.length) throw new Error('Aucun point valide trouvé (lat/lng requis)');
+  log(`✅ ${markers.length} points lus`, 'ok');
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+  return { name, markers };
 }
 
 // ── Export helpers ──

@@ -6,8 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { ChevronLeft, Upload, Plus, Trash2, Loader2, MapPin } from 'lucide-react';
 import {
-  processExcelFile, processHtmlFile, processJsonFile,
-  processKmlFile, processKmzFile, processGpxFile, categoryColor,
+  processKmlFile, processKmzFile, processGpxFile, processPointsFile, categoryColor,
 } from '@/lib/commercialMapUtils';
 
 export default function PoleAgriManager() {
@@ -17,7 +16,7 @@ export default function PoleAgriManager() {
   const [points, setPoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
-  const [form, setForm] = useState({ name: '', category: '', lat: '', lng: '', address: '' });
+  const [form, setForm] = useState({ name: '', category: '', lat: '', lng: '', postalCode: '', city: '', address: '' });
 
   const load = async () => {
     setLoading(true);
@@ -36,22 +35,16 @@ export default function PoleAgriManager() {
       const onLog = () => {};
       const ext = (file.name.split('.').pop() || '').toLowerCase();
       let res;
-      if (['html', 'htm'].includes(ext)) res = await processHtmlFile(file, onLog);
-      else if (['xlsx', 'xls', 'csv', 'tsv'].includes(ext)) {
-        let f = file;
-        if (ext === 'csv' || ext === 'tsv') {
-          const txt = await file.text();
-          if ((txt.match(/;/g) || []).length > (txt.match(/,/g) || []).length) f = new File([txt.replace(/;/g, ',')], file.name, { type: 'text/csv' });
-        }
-        res = await processExcelFile(f, 'auto', onLog);
-      } else if (['json', 'geojson'].includes(ext)) res = await processJsonFile(file, onLog);
-      else if (ext === 'kml') res = await processKmlFile(file, onLog);
+      if (ext === 'kml') res = await processKmlFile(file, onLog);
       else if (ext === 'kmz') res = await processKmzFile(file, onLog);
       else if (ext === 'gpx') res = await processGpxFile(file, onLog);
-      else throw new Error('Format non supporté : .' + ext);
+      else res = await processPointsFile(file, onLog);
       const mks = res.markers || [];
       if (!mks.length) throw new Error('Aucun point trouvé dans le fichier');
-      const rows = mks.map(m => ({ name: m.name || 'Pôle Agri', lat: m.lat, lng: m.lng, address: '', category: m.category || '' }));
+      const rows = mks.map(m => ({
+        name: m.name || 'Pôle Agri', lat: m.lat, lng: m.lng,
+        address: m.address || '', postalCode: m.postalCode || '', city: m.city || '', category: m.category || '',
+      }));
       await base44.entities.PoleAgriPoint.bulkCreate(rows);
       toast({ title: `${rows.length} points importés ✓` });
       load();
@@ -67,8 +60,8 @@ export default function PoleAgriManager() {
     const lat = parseFloat(form.lat), lng = parseFloat(form.lng);
     if (!form.name.trim() || isNaN(lat) || isNaN(lng)) { toast({ title: 'Nom + coordonnées requis', variant: 'destructive' }); return; }
     try {
-      await base44.entities.PoleAgriPoint.create({ name: form.name.trim(), lat, lng, address: form.address.trim(), category: form.category.trim() });
-      setForm({ name: '', category: '', lat: '', lng: '', address: '' });
+      await base44.entities.PoleAgriPoint.create({ name: form.name.trim(), lat, lng, address: form.address.trim(), category: form.category.trim(), postalCode: form.postalCode.trim(), city: form.city.trim() });
+      setForm({ name: '', category: '', lat: '', lng: '', postalCode: '', city: '', address: '' });
       load();
       toast({ title: 'Point ajouté ✓' });
     } catch (e) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
@@ -101,7 +94,7 @@ export default function PoleAgriManager() {
             <Button onClick={() => fileRef.current?.click()} disabled={importing} className="gap-2 bg-gradient-to-r from-green-500 to-lime-600 hover:from-green-600 hover:to-lime-700">
               {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Importer un fichier
             </Button>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.tsv,.json,.geojson,.html,.htm,.kml,.kmz,.gpx" className="hidden" onChange={(e) => e.target.files[0] && handleImport(e.target.files[0])} />
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.tsv,.json,.geojson,.kml,.kmz,.gpx" className="hidden" onChange={(e) => e.target.files[0] && handleImport(e.target.files[0])} />
             <Button variant="outline" onClick={handleClearAll} className="gap-2 border-slate-700 text-rose-400 hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /> Tout supprimer</Button>
             <span className="flex items-center gap-1.5 text-xs text-slate-500"><MapPin className="w-3.5 h-3.5" /> {points.length} point{points.length > 1 ? 's' : ''}</span>
           </div>
@@ -111,15 +104,17 @@ export default function PoleAgriManager() {
       <div className="max-w-5xl mx-auto px-6 py-6">
         <div className="rounded-2xl bg-slate-900/60 border border-slate-800/60 p-4 mb-6">
           <h3 className="text-sm font-bold text-slate-200 mb-3">Ajouter un point manuellement</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-2">
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nom du point" />
             <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Catégorie" />
             <Input value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} placeholder="Latitude" />
             <Input value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} placeholder="Longitude" />
-            <div className="flex gap-2">
-              <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Adresse (option)" className="flex-1" />
-              <Button onClick={handleAdd} className="gap-1.5 bg-green-600 hover:bg-green-700"><Plus className="w-4 h-4" /></Button>
-            </div>
+            <Input value={form.postalCode} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} placeholder="CP" />
+            <Input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Ville" />
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Adresse (option)" className="flex-1" />
+            <Button onClick={handleAdd} className="gap-1.5 bg-green-600 hover:bg-green-700"><Plus className="w-4 h-4" /> Ajouter</Button>
           </div>
         </div>
 
@@ -138,9 +133,11 @@ export default function PoleAgriManager() {
                 <tr>
                   <th className="text-left px-4 py-3 font-semibold">Nom</th>
                   <th className="text-left px-4 py-3 font-semibold">Catégorie</th>
-                  <th className="text-left px-4 py-3 font-semibold">Latitude</th>
-                  <th className="text-left px-4 py-3 font-semibold">Longitude</th>
-                  <th className="text-left px-4 py-3 font-semibold hidden sm:table-cell">Adresse</th>
+                  <th className="text-left px-4 py-3 font-semibold">CP</th>
+                  <th className="text-left px-4 py-3 font-semibold">Ville</th>
+                  <th className="text-left px-4 py-3 font-semibold hidden md:table-cell">Latitude</th>
+                  <th className="text-left px-4 py-3 font-semibold hidden md:table-cell">Longitude</th>
+                  <th className="text-left px-4 py-3 font-semibold hidden lg:table-cell">Adresse</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -151,9 +148,11 @@ export default function PoleAgriManager() {
                     <td className="px-4 py-3">
                       {p.category ? <span className="inline-flex items-center gap-1.5 text-xs text-slate-300"><span className="w-2.5 h-2.5 rounded-full" style={{ background: categoryColor(p.category) }} />{p.category}</span> : <span className="text-slate-600 text-xs">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-slate-400 font-mono text-xs">{p.lat}</td>
-                    <td className="px-4 py-3 text-slate-400 font-mono text-xs">{p.lng}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs hidden sm:table-cell">{p.address || '—'}</td>
+                    <td className="px-4 py-3 text-slate-400 text-xs">{p.postalCode || '—'}</td>
+                    <td className="px-4 py-3 text-slate-300 text-xs">{p.city || '—'}</td>
+                    <td className="px-4 py-3 text-slate-400 font-mono text-xs hidden md:table-cell">{p.lat}</td>
+                    <td className="px-4 py-3 text-slate-400 font-mono text-xs hidden md:table-cell">{p.lng}</td>
+                    <td className="px-4 py-3 text-slate-500 text-xs hidden lg:table-cell">{p.address || '—'}</td>
                     <td className="px-4 py-3 text-right">
                       <button onClick={() => handleDelete(p.id)} className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-500/10"><Trash2 className="w-4 h-4" /></button>
                     </td>
