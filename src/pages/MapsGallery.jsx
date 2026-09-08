@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin } from 'lucide-react';
+import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin, Link2 } from 'lucide-react';
 import { syncCV, genShareToken } from '@/lib/commercialMapUtils';
 
 export default function MapsGallery() {
@@ -69,6 +69,10 @@ export default function MapsGallery() {
   const copyShare = (token) => {
     const url = `${window.location.origin}/public/${token}`;
     navigator.clipboard.writeText(url).then(() => toast({ title: 'Lien public copié ✓' }));
+  };
+  const copyShareEditable = (token) => {
+    const url = `${window.location.origin}/public/${token}/edit`;
+    navigator.clipboard.writeText(url).then(() => toast({ title: 'Lien public modifiable copié ✓' }));
   };
 
   return (
@@ -157,8 +161,11 @@ export default function MapsGallery() {
                       <Button size="sm" variant="outline" onClick={() => navigate(`/public/${m.shareToken}`)} className="h-8 w-8 p-0 border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40" title="Vue publique">
                         <Eye className="w-3.5 h-3.5" />
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => copyShare(m.shareToken)} className="h-8 w-8 p-0 border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40" title="Copier le lien">
+                      <Button size="sm" variant="outline" onClick={() => copyShare(m.shareToken)} className="h-8 w-8 p-0 border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40" title="Copier le lien public (lecture seule)">
                         <Share2 className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => copyShareEditable(m.shareToken)} className="h-8 w-8 p-0 border-amber-600/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20" title="Copier le lien public modifiable">
+                        <Link2 className="w-3.5 h-3.5" />
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => setConfirmDelete(m)} className="h-8 w-8 p-0 border-slate-700 bg-slate-800/40 text-rose-400/70 hover:bg-rose-500/10 hover:text-rose-400" title="Supprimer">
                         <Trash2 className="w-3.5 h-3.5" />

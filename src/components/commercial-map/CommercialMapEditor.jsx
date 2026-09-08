@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   MapPin, Pencil, Table2, Download, Settings2, Save, Share2, Eye,
-  Plus, Minus, Search, X, ChevronLeft, Undo2, Redo2,
+  Plus, Minus, Search, X, ChevronLeft, Undo2, Redo2, Link2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { base44 } from '@/api/base44Client';
@@ -23,7 +23,7 @@ import ChatbotPanel from './ChatbotPanel';
 
 const DEFAULT_STYLE = { fillOpacity: 0.65, dimOpacity: 0.06, borderWeight: 0.6, borderColor: '#ffffff', borderOpacity: 0.85, bordersOn: true };
 
-export default function CommercialMapEditor({ record, readOnly = false, onSave }) {
+export default function CommercialMapEditor({ record, readOnly = false, serializeOnly = false, onSave }) {
   const { toast } = useToast();
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -539,11 +539,13 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       const map = mapRef.current;
       const c = map.getCenter();
       const departments = [...deptLoadedRef.current];
+      const overlaysRaw = serializeOverlays(overlays);
+      const markersRaw = serializeMarkers(markersRef.current);
       await onSave({
-        overlays: await storeLargeField(serializeOverlays(overlays), 'overlays.json'),
+        overlays: serializeOnly ? overlaysRaw : await storeLargeField(overlaysRaw, 'overlays.json'),
         mapView: serializeMapView(c.lat, c.lng, map.getZoom()),
         departments: JSON.stringify(departments),
-        markers: await storeLargeField(serializeMarkers(markersRef.current), 'markers.json'),
+        markers: serializeOnly ? markersRaw : await storeLargeField(markersRaw, 'markers.json'),
       });
       toast({ title: 'Carte enregistrée ✓' });
     } catch (e) {
@@ -557,6 +559,11 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     if (!record?.shareToken) { toast({ title: 'Enregistrez la carte pour obtenir un lien', variant: 'destructive' }); return; }
     const url = `${window.location.origin}/public/${record.shareToken}`;
     navigator.clipboard.writeText(url).then(() => toast({ title: 'Lien public copié ✓' })).catch(() => toast({ title: url }));
+  };
+  const handleShareEditable = () => {
+    if (!record?.shareToken) { toast({ title: 'Enregistrez la carte pour obtenir un lien', variant: 'destructive' }); return; }
+    const url = `${window.location.origin}/public/${record.shareToken}/edit`;
+    navigator.clipboard.writeText(url).then(() => toast({ title: 'Lien public modifiable copié ✓' })).catch(() => toast({ title: url }));
   };
 
   const toggleVendor = (name) => {
@@ -737,6 +744,11 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
           {record?.shareToken && (
             <Button size="sm" variant="outline" onClick={handleShare} className="h-8 gap-1.5 text-xs ml-1 border-slate-700 bg-slate-800/40 text-slate-200 hover:bg-slate-700/40">
               <Share2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Partager</span>
+            </Button>
+          )}
+          {record?.shareToken && (
+            <Button size="sm" variant="outline" onClick={handleShareEditable} title="Copier le lien public modifiable" className="h-8 gap-1.5 text-xs ml-1 border-amber-600/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20">
+              <Link2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Lien modifiable</span>
             </Button>
           )}
         </div>
