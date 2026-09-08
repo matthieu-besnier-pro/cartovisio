@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { ChevronLeft, Upload, Plus, Trash2, Loader2, MapPin } from 'lucide-react';
 import {
-  processKmlFile, processKmzFile, processGpxFile, processPointsFile, categoryColor,
+  processKmlFile, processKmzFile, processGpxFile, processPointsFile, filialeStyle,
 } from '@/lib/commercialMapUtils';
 
 export default function PoleAgriManager() {
@@ -146,7 +146,7 @@ export default function PoleAgriManager() {
                   <tr key={p.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
                     <td className="px-4 py-3 text-slate-100 font-medium">{p.name}</td>
                     <td className="px-4 py-3">
-                      {p.category ? <span className="inline-flex items-center gap-1.5 text-xs text-slate-300"><span className="w-2.5 h-2.5 rounded-full" style={{ background: categoryColor(p.category) }} />{p.category}</span> : <span className="text-slate-600 text-xs">—</span>}
+                      {p.category ? <span className="inline-flex items-center gap-1.5 text-xs text-slate-300"><span className="w-2.5 h-2.5 rounded-full" style={{ background: filialeStyle(p.category).color }} />{p.category}</span> : <span className="text-slate-600 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs">{p.postalCode || '—'}</td>
                     <td className="px-4 py-3 text-slate-300 text-xs">{p.city || '—'}</td>

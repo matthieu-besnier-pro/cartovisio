@@ -18,6 +18,19 @@ export function categoryColor(cat) {
   return _catColorMap[cat];
 }
 
+// Brand-specific picto + color per filiale (category name)
+export function filialeStyle(category) {
+  const c = (category || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (c.includes('excel')) return { color: '#06b6d4', gradient: 'linear-gradient(135deg,#22d3ee,#0891b2)', emoji: '🛞' };
+  if (c.includes('py')) return { color: '#0a0a0a', gradient: 'linear-gradient(135deg,#1f2937,#0a0a0a)', emoji: '🛞' };
+  if (c.includes('agrisanterre') || c.includes('migaud') || c.includes('case')) return { color: '#e30613', gradient: 'linear-gradient(135deg,#ef4444,#b91c1c)', emoji: '🚜' };
+  if (c.includes('gonnin') || c.includes('montauban') || c.includes('sicloe') || c.includes('new holland')) return { color: '#003da5', gradient: 'linear-gradient(135deg,#2563eb,#1e3a8a)', emoji: '🚜' };
+  if (c.includes('tmc')) return { color: '#f36612', gradient: 'linear-gradient(135deg,#fb923c,#ea580c)', emoji: '🚜' };
+  if (c.includes('agrizone')) return { color: '#2563eb', gradient: 'linear-gradient(135deg,#2563eb,#f97316)', emoji: '🚜' };
+  const fallback = categoryColor(category);
+  return { color: fallback, gradient: `linear-gradient(135deg,${fallback},${fallback}cc)`, emoji: '🌾' };
+}
+
 // Large JSON fields are stored as uploaded files to respect entity field size limits
 const FIELD_INLINE_LIMIT = 40000;
 export async function storeLargeField(value, filename) {

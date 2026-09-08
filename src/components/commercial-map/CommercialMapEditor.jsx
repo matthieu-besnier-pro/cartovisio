@@ -11,7 +11,7 @@ import { base44 } from '@/api/base44Client';
 import {
   PALETTE, TILES, fetchDeptGeo, fetchDeptBoundary, fetchCantons, ensureOverlayColors, syncCV,
   processExcelFile, processHtmlFile, processJsonFile, processKmlFile, processKmzFile, processGpxFile,
-  serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers, categoryColor, storeLargeField, readFieldContent,
+  serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers, filialeStyle, storeLargeField, readFieldContent,
 } from '@/lib/commercialMapUtils';
 import LegendSidebar from './LegendSidebar';
 import ImportPanel from './ImportPanel';
@@ -222,10 +222,11 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     markersLayerRef.current.clearLayers();
     if (!layers.poleAgri) return;
     [...markersRef.current, ...globalPointsRef.current].forEach(mk => {
-      const c = categoryColor(mk.category);
+      const fs = filialeStyle(mk.category);
+      const c = fs.color;
       const icon = L.divIcon({
         className: 'pa-marker',
-        html: `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,${c},${c}cc);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1">🌾</div><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${c}"></div></div>`,
+        html: `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:28px;height:28px;border-radius:50%;background:${fs.gradient};border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1">${fs.emoji}</div><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${c}"></div></div>`,
         iconSize: [28, 35],
         iconAnchor: [14, 35],
         popupAnchor: [0, -33],
@@ -233,7 +234,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       const marker = L.marker([mk.lat, mk.lng], { icon });
       const sub = mk.category
         ? `<div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:${c}"></span><span style="font-weight:600;font-size:11px;color:${c}">${escapeHtml(mk.category)}</span></div>`
-        : `<div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="font-size:12px">🌾</span><span style="font-weight:600;font-size:11px;color:#16a34a;text-transform:uppercase;letter-spacing:.5px">Pôle Agri</span></div>`;
+        : `<div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="font-size:12px">${fs.emoji}</span><span style="font-weight:600;font-size:11px;color:#16a34a;text-transform:uppercase;letter-spacing:.5px">Pôle Agri</span></div>`;
       marker.bindPopup(`<div style="font-family:Inter,system-ui,sans-serif;min-width:140px"><div style="font-weight:700;font-size:13px;color:#0f172a">${escapeHtml(mk.name || 'Pôle Agri')}</div>${sub}</div>`, { className: 'cmap-popup' });
       markersLayerRef.current.addLayer(marker);
     });
