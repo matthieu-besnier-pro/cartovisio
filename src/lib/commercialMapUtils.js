@@ -7,6 +7,15 @@ export const PALETTE = [
   "#F0932B", "#22A6B3", "#BE2EDD", "#009432", "#EA2027", "#12CBC4",
 ];
 
+export const CATEGORY_PALETTE = ['#16a34a', '#2563eb', '#dc2626', '#7c3aed', '#ea580c', '#0891b2', '#ca8a04', '#db2777', '#059669', '#4f46e5'];
+const _catColorMap = {};
+export function categoryColor(cat) {
+  if (!cat) return '#16a34a';
+  if (_catColorMap[cat]) return _catColorMap[cat];
+  _catColorMap[cat] = CATEGORY_PALETTE[Object.keys(_catColorMap).length % CATEGORY_PALETTE.length];
+  return _catColorMap[cat];
+}
+
 export const DEPT_SLUGS = {
   '01': 'ain', '02': 'aisne', '03': 'allier', '04': 'alpes-de-haute-provence', '05': 'hautes-alpes',
   '06': 'alpes-maritimes', '07': 'ardeche', '08': 'ardennes', '09': 'ariege', '10': 'aube',
@@ -423,10 +432,10 @@ export async function processJsonFile(file, onLog) {
   try { parsed = JSON.parse(text); } catch (e) { throw new Error('JSON invalide : ' + e.message); }
   const cV = {};
   const markers = [];
-  const addMarker = (lat, lng, name) => {
+  const addMarker = (lat, lng, name, category) => {
     const la = parseFloat(lat), ln = parseFloat(lng);
     if (isNaN(la) || isNaN(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return;
-    markers.push({ id: 'pa_' + markers.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim() });
+    markers.push({ id: 'pa_' + markers.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim(), category: (category || '').trim() });
   };
   const tryRow = (row) => {
     if (!row || typeof row !== 'object') return;
@@ -435,7 +444,7 @@ export async function processJsonFile(file, onLog) {
     if (/^[0-9A-Z]{5}$/.test(code) && vendeur && !/^\d+$/.test(vendeur)) cV[code] = vendeur;
     const lat = row.lat ?? row.latitude;
     const lng = row.lng ?? row.lon ?? row.longitude;
-    if (lat != null && lng != null) addMarker(lat, lng, row.name || row.nom || row.title || '');
+    if (lat != null && lng != null) addMarker(lat, lng, row.name || row.nom || row.title || '', row.category || row.folder || row.layer || row.groupe || '');
   };
   if (Array.isArray(parsed)) {
     parsed.forEach(tryRow);
@@ -445,7 +454,7 @@ export async function processJsonFile(file, onLog) {
       const props = f.properties || {};
       if (g.type === 'Point') {
         const [lng, lat] = g.coordinates || [];
-        addMarker(lat, lng, props.name || props.nom || props.title || '');
+        addMarker(lat, lng, props.name || props.nom || props.title || '', props.category || props.folder || props.layer || props.groupe || '');
       } else if (props.vendeur || props.commercial) {
         const code = String(props.code || props.code_insee || props.insee || '').trim().replace(/\.0$/, '').padStart(5, '0');
         if (/^[0-9A-Z]{5}$/.test(code)) cV[code] = String(props.vendeur || props.commercial).trim();
@@ -476,22 +485,34 @@ function extractKmlMarkers(text, log) {
   const doc = new DOMParser().parseFromString(text, 'application/xml');
   const out = [];
   const seen = new Set();
-  const add = (lat, lng, name) => {
+  const add = (lat, lng, name, category) => {
     const la = parseFloat(lat), ln = parseFloat(lng);
     if (isNaN(la) || isNaN(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return;
     const key = `${la.toFixed(4)},${ln.toFixed(4)}`;
     if (seen.has(key)) return; seen.add(key);
-    out.push({ id: 'pa_' + out.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim() });
+    out.push({ id: 'pa_' + out.length + '_' + Math.random().toString(36).slice(2, 6), lat: la, lng: ln, name: (name || 'Pôle Agri').trim(), category: (category || '').trim() });
+  };
+  const folderNameOf = (pm) => {
+    let el = pm.parentElement;
+    while (el) {
+      if (el.tagName === 'Folder') {
+        const nm = el.getElementsByTagName('name')[0]?.textContent?.trim();
+        if (nm) return nm;
+      }
+      el = el.parentElement;
+    }
+    return '';
   };
   const placemarks = doc.getElementsByTagName('Placemark');
   for (const pm of Array.from(placemarks)) {
     const name = pm.getElementsByTagName('name')[0]?.textContent?.trim() || '';
+    const category = folderNameOf(pm);
     const points = pm.getElementsByTagName('Point');
     for (const pt of Array.from(points)) {
       const coords = pt.getElementsByTagName('coordinates')[0]?.textContent?.trim();
       if (!coords) continue;
       const first = coords.split(/\s+/)[0].split(',');
-      add(first[1], first[0], name);
+      add(first[1], first[0], name, category);
     }
   }
   if (out.length && log) log(`📍 ${out.length} marqueurs extraits du KML`, 'ok');

@@ -7,7 +7,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { ChevronLeft, Upload, Plus, Trash2, Loader2, MapPin } from 'lucide-react';
 import {
   processExcelFile, processHtmlFile, processJsonFile,
-  processKmlFile, processKmzFile, processGpxFile,
+  processKmlFile, processKmzFile, processGpxFile, categoryColor,
 } from '@/lib/commercialMapUtils';
 
 export default function PoleAgriManager() {
@@ -17,7 +17,7 @@ export default function PoleAgriManager() {
   const [points, setPoints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
-  const [form, setForm] = useState({ name: '', lat: '', lng: '', address: '' });
+  const [form, setForm] = useState({ name: '', category: '', lat: '', lng: '', address: '' });
 
   const load = async () => {
     setLoading(true);
@@ -51,7 +51,7 @@ export default function PoleAgriManager() {
       else throw new Error('Format non supporté : .' + ext);
       const mks = res.markers || [];
       if (!mks.length) throw new Error('Aucun point trouvé dans le fichier');
-      const rows = mks.map(m => ({ name: m.name || 'Pôle Agri', lat: m.lat, lng: m.lng, address: '' }));
+      const rows = mks.map(m => ({ name: m.name || 'Pôle Agri', lat: m.lat, lng: m.lng, address: '', category: m.category || '' }));
       await base44.entities.PoleAgriPoint.bulkCreate(rows);
       toast({ title: `${rows.length} points importés ✓` });
       load();
@@ -67,8 +67,8 @@ export default function PoleAgriManager() {
     const lat = parseFloat(form.lat), lng = parseFloat(form.lng);
     if (!form.name.trim() || isNaN(lat) || isNaN(lng)) { toast({ title: 'Nom + coordonnées requis', variant: 'destructive' }); return; }
     try {
-      await base44.entities.PoleAgriPoint.create({ name: form.name.trim(), lat, lng, address: form.address.trim() });
-      setForm({ name: '', lat: '', lng: '', address: '' });
+      await base44.entities.PoleAgriPoint.create({ name: form.name.trim(), lat, lng, address: form.address.trim(), category: form.category.trim() });
+      setForm({ name: '', category: '', lat: '', lng: '', address: '' });
       load();
       toast({ title: 'Point ajouté ✓' });
     } catch (e) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
@@ -111,8 +111,9 @@ export default function PoleAgriManager() {
       <div className="max-w-5xl mx-auto px-6 py-6">
         <div className="rounded-2xl bg-slate-900/60 border border-slate-800/60 p-4 mb-6">
           <h3 className="text-sm font-bold text-slate-200 mb-3">Ajouter un point manuellement</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
             <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nom du point" />
+            <Input value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="Catégorie" />
             <Input value={form.lat} onChange={(e) => setForm({ ...form, lat: e.target.value })} placeholder="Latitude" />
             <Input value={form.lng} onChange={(e) => setForm({ ...form, lng: e.target.value })} placeholder="Longitude" />
             <div className="flex gap-2">
@@ -136,6 +137,7 @@ export default function PoleAgriManager() {
               <thead className="bg-slate-900/60 text-slate-400 text-xs uppercase tracking-wide">
                 <tr>
                   <th className="text-left px-4 py-3 font-semibold">Nom</th>
+                  <th className="text-left px-4 py-3 font-semibold">Catégorie</th>
                   <th className="text-left px-4 py-3 font-semibold">Latitude</th>
                   <th className="text-left px-4 py-3 font-semibold">Longitude</th>
                   <th className="text-left px-4 py-3 font-semibold hidden sm:table-cell">Adresse</th>
@@ -146,6 +148,9 @@ export default function PoleAgriManager() {
                 {points.map(p => (
                   <tr key={p.id} className="border-t border-slate-800/60 hover:bg-slate-800/30">
                     <td className="px-4 py-3 text-slate-100 font-medium">{p.name}</td>
+                    <td className="px-4 py-3">
+                      {p.category ? <span className="inline-flex items-center gap-1.5 text-xs text-slate-300"><span className="w-2.5 h-2.5 rounded-full" style={{ background: categoryColor(p.category) }} />{p.category}</span> : <span className="text-slate-600 text-xs">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-slate-400 font-mono text-xs">{p.lat}</td>
                     <td className="px-4 py-3 text-slate-400 font-mono text-xs">{p.lng}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs hidden sm:table-cell">{p.address || '—'}</td>
