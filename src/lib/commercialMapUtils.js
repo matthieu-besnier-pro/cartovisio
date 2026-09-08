@@ -1,0 +1,432 @@
+// Shared utilities for commercial sector maps
+
+export const PALETTE = [
+  "#FF6B6B", "#4ECDC4", "#45B7D1", "#96CEB4", "#FFD93D", "#C77DFF",
+  "#FF8C42", "#6C5CE7", "#00B894", "#E17055", "#74B9FF", "#A29BFE",
+  "#FD79A8", "#55EFC4", "#FDCB6E", "#E84393", "#0984E3", "#6AB04C",
+  "#F0932B", "#22A6B3", "#BE2EDD", "#009432", "#EA2027", "#12CBC4",
+];
+
+export const DEPT_SLUGS = {
+  '01': 'ain', '02': 'aisne', '03': 'allier', '04': 'alpes-de-haute-provence', '05': 'hautes-alpes',
+  '06': 'alpes-maritimes', '07': 'ardeche', '08': 'ardennes', '09': 'ariege', '10': 'aube',
+  '11': 'aude', '12': 'aveyron', '13': 'bouches-du-rhone', '14': 'calvados', '15': 'cantal',
+  '16': 'charente', '17': 'charente-maritime', '18': 'cher', '19': 'correze', '21': 'cote-d-or',
+  '22': 'cotes-d-armor', '23': 'creuse', '24': 'dordogne', '25': 'doubs', '26': 'drome',
+  '27': 'eure', '28': 'eure-et-loir', '29': 'finistere', '2A': 'corse-du-sud', '2B': 'haute-corse',
+  '30': 'gard', '31': 'haute-garonne', '32': 'gers', '33': 'gironde', '34': 'herault',
+  '35': 'ille-et-vilaine', '36': 'indre', '37': 'indre-et-loire', '38': 'isere', '39': 'jura',
+  '40': 'landes', '41': 'loir-et-cher', '42': 'loire', '43': 'haute-loire', '44': 'loire-atlantique',
+  '45': 'loiret', '46': 'lot', '47': 'lot-et-garonne', '48': 'lozere', '49': 'maine-et-loire',
+  '50': 'manche', '51': 'marne', '52': 'haute-marne', '53': 'mayenne', '54': 'meurthe-et-moselle',
+  '55': 'meuse', '56': 'morbihan', '57': 'moselle', '58': 'nievre', '59': 'nord',
+  '60': 'oise', '61': 'orne', '62': 'pas-de-calais', '63': 'puy-de-dome', '64': 'pyrenees-atlantiques',
+  '65': 'hautes-pyrenees', '66': 'pyrenees-orientales', '67': 'bas-rhin', '68': 'haut-rhin',
+  '69': 'rhone', '70': 'haute-saone', '71': 'saone-et-loire', '72': 'sarthe', '73': 'savoie',
+  '74': 'haute-savoie', '75': 'paris', '76': 'seine-maritime', '77': 'seine-et-marne',
+  '78': 'yvelines', '79': 'deux-sevres', '80': 'somme', '81': 'tarn', '82': 'tarn-et-garonne',
+  '83': 'var', '84': 'vaucluse', '85': 'vendee', '86': 'vienne', '87': 'haute-vienne',
+  '88': 'vosges', '89': 'yonne', '90': 'territoire-de-belfort', '91': 'essonne',
+  '92': 'hauts-de-seine', '93': 'seine-saint-denis', '94': 'val-de-marne', '95': 'val-d-oise',
+};
+
+export const TILES = {
+  'osm': { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', opts: { maxZoom: 19, attribution: '© OpenStreetMap' } },
+  'carto-light': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 19, attribution: '© CartoDB' } },
+  'carto-dark': { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 19, attribution: '© CartoDB' } },
+  'google-satellite': { url: 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', opts: { maxZoom: 19, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google' } },
+  'none': null,
+};
+
+export function genShareToken() {
+  return 'map_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+}
+
+// Fetch commune geometries for a department from geo.api.gouv.fr
+// Returns an object { code: feature } merged into provided geoData
+export async function fetchDeptGeo(dept, geoData, deptLoaded) {
+  if (deptLoaded.has(dept)) return;
+  try {
+    const r = await fetch(`https://geo.api.gouv.fr/departements/${dept}/communes?geometry=contour&format=geojson&type=commune-actuelle`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const gj = await r.json();
+    gj.features.forEach(f => { geoData[f.properties.code] = f; });
+    deptLoaded.add(dept);
+  } catch (e) {
+    console.warn('Dept geo err:', dept, e.message);
+    deptLoaded.add(dept);
+  }
+}
+
+// Fetch department boundary (outer contour) from gregoiredavid/france-geojson
+export async function fetchDeptBoundary(dept, deptGeoData, deptGeoLoaded) {
+  if (deptGeoLoaded.has(dept)) return;
+  const slug = DEPT_SLUGS[dept];
+  if (!slug) { deptGeoLoaded.add(dept); return; }
+  const url = `https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/departements/${dept}-${slug}/departement-${dept}-${slug}.geojson`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const gj = await r.json();
+    if (gj.type === 'Feature') deptGeoData[dept] = gj;
+    else if (gj.features && gj.features.length) deptGeoData[dept] = gj.features[0];
+    deptGeoLoaded.add(dept);
+  } catch (e) {
+    console.warn('Dept boundary err:', dept, e.message);
+    deptGeoLoaded.add(dept);
+  }
+}
+
+// Ensure every vendeur in an overlay has a color assigned
+export function ensureOverlayColors(overlay, startIdx = 0) {
+  if (!overlay.vColors) overlay.vColors = {};
+  let idx = startIdx;
+  const vendors = [...new Set(Object.values(overlay.cV || {}))];
+  vendors.forEach(v => {
+    if (!overlay.vColors[v]) overlay.vColors[v] = PALETTE[idx % PALETTE.length];
+    idx++;
+  });
+  return overlay;
+}
+
+// Merge all visible overlays into a flat code->vendeur map and vendeur->color map
+export function syncCV(overlays) {
+  const cV = {};
+  const vColors = {};
+  overlays.forEach(o => {
+    if (!o.visible) return;
+    Object.assign(cV, o.cV || {});
+    Object.assign(vColors, o.vColors || {});
+  });
+  return { cV, vColors };
+}
+
+// Count communes per vendeur for an overlay
+export function countByVendeur(overlay) {
+  const counts = {};
+  Object.values(overlay.cV || {}).forEach(v => { counts[v] = (counts[v] || 0) + 1; });
+  return counts;
+}
+
+// ── Excel import ──
+// Returns { name, cV, departments, log }
+export async function processExcelFile(file, codeType = 'auto', onLog) {
+  const log = (m, t) => onLog && onLog(m, t);
+  log(`📂 ${file.name}`);
+  const buf = await file.arrayBuffer();
+  const XLSX = window.XLSX;
+  const wb = XLSX.read(buf, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+  log(`${rows.length} lignes lues`);
+
+  const sr = isNaN(parseInt(rows[0]?.[0])) ? 1 : 0;
+  if (sr) log('En-tête ignorée');
+  const headerA = sr ? String(rows[0][0] || '').toLowerCase() : '';
+  const headerB = sr ? String(rows[0][1] || '') : '';
+
+  // Auto-detect code type
+  if (codeType === 'auto') {
+    if (headerA.includes('postal') || headerA.includes('cp') || headerA === 'code postal') {
+      codeType = 'postal'; log('📮 En-tête "' + rows[0][0] + '" → codes postaux', 'ok');
+    } else if (headerA.includes('insee') || headerA.includes('commune')) {
+      codeType = 'insee'; log('🏛 En-tête "' + rows[0][0] + '" → codes INSEE', 'ok');
+    } else {
+      const sample = [];
+      for (let i = sr; i < Math.min(rows.length, 20); i++) {
+        if (rows[i]?.[0]) sample.push(String(rows[i][0]).trim().replace(/\.0$/, '').padStart(5, '0'));
+      }
+      const endsIn0 = sample.filter(c => c.endsWith('0')).length;
+      const endsIn00 = sample.filter(c => c.endsWith('00')).length;
+      if (endsIn00 > sample.length * 0.15 || endsIn0 > sample.length * 0.5) {
+        codeType = 'postal'; log('🔍 Détecté : codes postaux (pattern)', 'ok');
+      } else {
+        codeType = 'insee'; log('🔍 Détecté : codes INSEE (pattern)', 'ok');
+      }
+    }
+  }
+
+  // Detect 3-column format: Code | Commune | Value
+  let hasNameCol = false;
+  const maxCols = Math.max(...rows.slice(sr, Math.min(rows.length, 20)).map(r => r ? r.length : 0));
+  if (maxCols >= 3) {
+    let bText = 0, cNum = 0;
+    for (let i = sr; i < Math.min(rows.length, 20); i++) {
+      const row = rows[i]; if (!row) continue;
+      if (row[1] != null && isNaN(Number(row[1]))) bText++;
+      if (row[2] != null && !isNaN(Number(row[2]))) cNum++;
+    }
+    hasNameCol = (bText > 3 && cNum > 3);
+  }
+
+  const rawEntries = [];
+  let skip = 0;
+  for (let i = sr; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length < 2) { skip++; continue; }
+    let code = String(row[0]).trim().replace(/\.0$/, '');
+    let v, vStr, communeName = null;
+    if (hasNameCol) {
+      communeName = row[1] ? String(row[1]).trim() : null;
+      v = row[2]; vStr = v != null ? String(v).trim() : '';
+    } else {
+      v = row[1]; vStr = v != null ? String(v).trim() : '';
+    }
+    if (!code || !vStr || vStr === 'undefined' || vStr === 'null') { skip++; continue; }
+    code = code.padStart(5, '0');
+    if (code.length !== 5 || isNaN(parseInt(code))) { skip++; continue; }
+    rawEntries.push({ code, raw: v, vendeur: vStr, commune: communeName });
+  }
+  if (!rawEntries.length) { log('⚠ Aucune donnée valide', 'err'); throw new Error('Aucune donnée valide'); }
+  log(`${rawEntries.length} lignes valides`);
+
+  // If column B is numeric → not a sector import (analysis), reject for now
+  const numericCount = rawEntries.filter(e => typeof e.raw === 'number' || (!isNaN(Number(e.raw)) && String(e.raw).trim() !== '')).length;
+  const isColBNumeric = numericCount > rawEntries.length * 0.8;
+  if (isColBNumeric) {
+    throw new Error('La colonne valeur est numérique. Pour les secteurs, utilisez un nom de commercial en colonne B.');
+  }
+
+  const usePostal = (codeType === 'postal');
+  const hasNames = rawEntries.some(e => e.commune);
+  const nd = {};
+  let ok = 0;
+
+  if (usePostal) {
+    log('📮 Résolution des codes postaux...');
+    const postalCache = {};
+    const uniqueCPs = [...new Set(rawEntries.map(e => e.code))];
+    let resolved = 0;
+    for (let i = 0; i < uniqueCPs.length; i++) {
+      const cp = uniqueCPs[i];
+      try {
+        const r = await fetch('https://geo.api.gouv.fr/communes?codePostal=' + cp + '&fields=code,nom');
+        if (r.ok) { postalCache[cp] = await r.json(); if (postalCache[cp].length) resolved++; }
+        else postalCache[cp] = [];
+      } catch (e) { postalCache[cp] = []; }
+    }
+    log(`✓ ${resolved}/${uniqueCPs.length} CP résolus`, 'ok');
+    if (hasNames) {
+      const normalize = (s) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[-']/g, ' ').replace(/\bst\b/g, 'saint').replace(/\s+/g, ' ').trim();
+      for (const { code, vendeur, commune } of rawEntries) {
+        const communes = postalCache[code] || [];
+        const norm = normalize(commune);
+        const match = communes.find(c => normalize(c.nom) === norm)
+          || communes.find(c => normalize(c.nom).includes(norm) || norm.includes(normalize(c.nom)));
+        if (match) { nd[match.code] = vendeur; ok++; }
+        else { communes.forEach(c => { nd[c.code] = vendeur; ok++; }); }
+      }
+    } else {
+      for (const { code, vendeur } of rawEntries) {
+        (postalCache[code] || []).map(c => c.code).forEach(ic => { nd[ic] = vendeur; ok++; });
+      }
+    }
+    log(`→ ${ok} communes affectées`, 'ok');
+  } else {
+    for (const { code, vendeur } of rawEntries) { nd[code] = vendeur; ok++; }
+    log(`✓ ${ok} communes`, 'ok');
+  }
+  if (skip) log(`⚠ ${skip} lignes ignorées`, 'err');
+
+  const departments = [...new Set(Object.keys(nd).map(c => c.slice(0, 2)))];
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+  return { name, cV: nd, departments };
+}
+
+// ── Export helpers ──
+
+function mercY(lat) { return Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360)); }
+
+function project(lat, lng, b, scale) {
+  const x = (lng - b.minLng) * Math.PI / 180 * scale;
+  const y = (mercY(b.maxLat) - mercY(lat)) * scale;
+  return [x, y];
+}
+
+function featurePath(feature, b, scale) {
+  const g = feature.geometry;
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+  let d = '';
+  polys.forEach(poly => poly.forEach(ring => {
+    ring.forEach((c, i) => {
+      const [x, y] = project(c[1], c[0], b, scale);
+      d += i === 0 ? `M${x.toFixed(2)},${y.toFixed(2)}` : `L${x.toFixed(2)},${y.toFixed(2)}`;
+    });
+    d += 'Z';
+  }));
+  return d;
+}
+
+export function buildSVG(overlays, geoData, { bordersOn = true, maxDim = 2000, title = 'Carte Secteurs Commerciaux', accent = '#f43f5e' } = {}) {
+  const { cV, vColors } = syncCV(overlays);
+  if (!Object.keys(cV).length) return null;
+
+  let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+  Object.keys(cV).forEach(code => {
+    const f = geoData[code]; if (!f) return;
+    const L = window.L;
+    const bb = L.geoJSON(f).getBounds();
+    minLat = Math.min(minLat, bb.getSouth()); maxLat = Math.max(maxLat, bb.getNorth());
+    minLng = Math.min(minLng, bb.getWest()); maxLng = Math.max(maxLng, bb.getEast());
+  });
+  const pad = 0.03;
+  const b = {
+    minLat: minLat - (maxLat - minLat) * pad, maxLat: maxLat + (maxLat - minLat) * pad,
+    minLng: minLng - (maxLng - minLng) * pad, maxLng: maxLng + (maxLng - minLng) * pad,
+  };
+  const lngRad = (b.maxLng - b.minLng) * Math.PI / 180;
+  const mercSpan = mercY(b.maxLat) - mercY(b.minLat);
+  let scale, mapW, mapH;
+  if (lngRad >= mercSpan) { scale = maxDim / lngRad; } else { scale = maxDim / mercSpan; }
+  mapW = Math.round(lngRad * scale);
+  mapH = Math.round(mercSpan * scale);
+
+  const counts = {};
+  Object.values(cV).forEach(v => { counts[v] = (counts[v] || 0) + 1; });
+  const vendeurs = Object.keys(counts).sort();
+  const LW = 200, LP = 14, LI = 23;
+  const LH = LP * 2 + 28 + vendeurs.length * LI;
+
+  const byV = {};
+  Object.entries(cV).forEach(([code, vendeur]) => {
+    const f = geoData[code]; if (!f) return;
+    if (!byV[vendeur]) byV[vendeur] = [];
+    byV[vendeur].push({ code, f });
+  });
+  let groups = '';
+  Object.entries(byV).forEach(([vendeur, items]) => {
+    const c = vColors[vendeur] || '#888';
+    let paths = '';
+    items.forEach(({ code, f }) => { const d = featurePath(f, b, scale); if (d) paths += `<path d="${d}" data-code="${code}"/>\n`; });
+    const strokeColor = bordersOn ? '#fff' : c;
+    const strokeW = bordersOn ? '.45' : '0';
+    groups += `<g fill="${c}" fill-opacity=".72" stroke="${strokeColor}" stroke-width="${strokeW}" stroke-linejoin="round" shape-rendering="geometricPrecision">\n${paths}</g>\n`;
+  });
+
+  const LX = mapW - LW - 18, LY = 18;
+  let legItems = '';
+  vendeurs.forEach((n, i) => {
+    const y = LP + 28 + i * LI;
+    legItems += `<rect x="${LP}" y="${y}" width="13" height="13" fill="${vColors[n] || '#888'}" rx="2"/>\n<text x="${LP + 20}" y="${y + 10}" fill="#e0e0e0" font-size="11.5" font-family="Arial,Helvetica,sans-serif">${escapeXml(n)}</text>\n<text x="${LW - LP}" y="${y + 10}" fill="#7ec8e3" font-size="10.5" font-family="Arial,Helvetica,sans-serif" text-anchor="end">${counts[n]}</text>\n`;
+  });
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${mapW} ${mapH}" width="${mapW}" height="${mapH}">
+<rect width="${mapW}" height="${mapH}" fill="#e8e4d8"/>
+${groups}
+<g transform="translate(${LX},${LY})">
+  <rect width="${LW}" height="${LH}" rx="8" fill="#16213e" fill-opacity=".94"/>
+  <rect width="${LW}" height="28" rx="8" fill="${accent}"/>
+  <rect y="20" width="${LW}" height="14" fill="${accent}"/>
+  <text x="${LP}" y="20" fill="white" font-size="10.5" font-weight="bold" letter-spacing="1.5" font-family="Arial,Helvetica,sans-serif">SECTEURS COMMERCIAUX</text>
+  ${legItems}
+</g>
+<g transform="translate(18,18)">
+  <rect width="270" height="33" rx="6" fill="#16213e" fill-opacity=".94"/>
+  <text x="13" y="21" fill="white" font-size="13.5" font-weight="bold" font-family="Arial,Helvetica,sans-serif">${escapeXml(title)}</text>
+</g>
+</svg>`;
+}
+
+function escapeXml(s) {
+  return String(s).replace(/[<>&'"]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
+}
+
+export function exportSVGFile(overlays, geoData, opts) {
+  const svg = buildSVG(overlays, geoData, opts);
+  if (!svg) return false;
+  dlFile('secteurs.svg', svg, 'image/svg+xml');
+  return true;
+}
+
+export function exportPNGFile(overlays, geoData, opts) {
+  const svg = buildSVG(overlays, geoData, { ...opts, maxDim: 2400 });
+  if (!svg) return false;
+  const m = svg.match(/width="(\d+)" height="(\d+)"/);
+  const pW = m ? parseInt(m[1]) : 2400, pH = m ? parseInt(m[2]) : 1800;
+  const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = pW; canvas.height = pH;
+    canvas.getContext('2d').drawImage(img, 0, 0, pW, pH);
+    URL.revokeObjectURL(url);
+    canvas.toBlob(b => dlFile('secteurs_HD.png', b, 'image/png', true), 'image/png', 1);
+  };
+  img.src = url;
+  return true;
+}
+
+export function exportGeoJSONFile(overlays, geoData) {
+  const { cV, vColors } = syncCV(overlays);
+  const features = [];
+  Object.entries(cV).forEach(([code, vendeur]) => {
+    const f = geoData[code]; if (!f) return;
+    const ff = JSON.parse(JSON.stringify(f));
+    ff.properties.vendeur = vendeur;
+    ff.properties.couleur = vColors[vendeur] || '#888';
+    features.push(ff);
+  });
+  dlFile('secteurs.geojson', JSON.stringify({ type: 'FeatureCollection', features }, null, 2), 'application/json');
+}
+
+export function exportExcelFile(overlays, geoData) {
+  const { cV } = syncCV(overlays);
+  const rows = [['Code commune', 'Vendeur', 'Nom commune', 'Département']];
+  const entries = Object.entries(cV).map(([code, vendeur]) => {
+    const nom = geoData[code]?.properties?.nom || '';
+    const dept = code.slice(0, 2);
+    return [code, vendeur, nom, dept];
+  });
+  entries.sort((a, b) => a[1].localeCompare(b[1]) || a[2].localeCompare(b[2]));
+  entries.forEach(r => rows.push(r));
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.aoa_to_sheet(rows);
+  ws1['!cols'] = [{ wch: 14 }, { wch: 18 }, { wch: 28 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Communes');
+  const counts = {};
+  entries.forEach(([, vendeur]) => { counts[vendeur] = (counts[vendeur] || 0) + 1; });
+  const summaryRows = [['Vendeur', 'Nb communes']];
+  Object.entries(counts).sort((a, b) => a[0].localeCompare(b[0])).forEach(([v, n]) => summaryRows.push([v, n]));
+  summaryRows.push(['', ''], ['TOTAL', entries.length]);
+  const ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
+  ws2['!cols'] = [{ wch: 20 }, { wch: 14 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Résumé');
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  dlFile('secteurs_commerciaux.xlsx', new Blob([buf], { type: 'application/octet-stream' }), '', true);
+}
+
+function dlFile(name, data, type, isBlob = false) {
+  const a = document.createElement('a');
+  a.href = isBlob ? URL.createObjectURL(data) : URL.createObjectURL(new Blob([data], { type }));
+  a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
+// Serialize / deserialize map state for DB storage
+export function serializeOverlays(overlays) {
+  return JSON.stringify(overlays.map(o => ({
+    id: o.id, name: o.name, cV: o.cV, vColors: o.vColors, opacity: o.opacity, visible: o.visible,
+  })));
+}
+
+export function parseOverlays(json) {
+  if (!json) return [];
+  try { return JSON.parse(json); } catch { return []; }
+}
+
+export function serializeMapView(lat, lng, zoom) {
+  return JSON.stringify({ lat, lng, zoom });
+}
+
+export function parseMapView(json) {
+  if (!json) return null;
+  try { return JSON.parse(json); } catch { return null; }
+}
+
+export function parseDepartments(json) {
+  if (!json) return [];
+  try { return JSON.parse(json); } catch { return []; }
+}

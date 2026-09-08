@@ -1,0 +1,43 @@
+{
+  "name": "CommercialMap",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "overlays": {
+      "type": "string",
+      "description": "JSON string of overlays array [{id,name,cV,vColors,opacity,visible}]"
+    },
+    "mapView": {
+      "type": "string",
+      "description": "JSON string {lat,lng,zoom}"
+    },
+    "departments": {
+      "type": "string",
+      "description": "JSON string array of department codes loaded"
+    },
+    "shareToken": {
+      "type": "string",
+      "description": "Unique public share token"
+    },
+    "isPublic": {
+      "type": "boolean",
+      "default": true
+    },
+    "accentColor": {
+      "type": "string",
+      "default": "#f43f5e"
+    },
+    "coverColor": {
+      "type": "string",
+      "default": "#0f172a"
+    }
+  },
+  "required": [
+    "title"
+  ]
+}

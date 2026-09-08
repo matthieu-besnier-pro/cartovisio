@@ -6,6 +6,9 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import ScrollToTop from './components/ScrollToTop';
+import MapsGallery from '@/pages/MapsGallery';
+import MapEditor from '@/pages/MapEditor';
+import PublicMap from '@/pages/PublicMap';
 // Add page imports here
 
 const AuthenticatedApp = () => {
@@ -35,6 +38,9 @@ const AuthenticatedApp = () => {
   return (
     <Routes>
       {/* Add your page Route elements here */}
+      <Route path="/" element={<MapsGallery />} />
+      <Route path="/map/:id" element={<MapEditor />} />
+      <Route path="/public/:token" element={<PublicMap />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );
