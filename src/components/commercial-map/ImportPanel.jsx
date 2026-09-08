@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { UploadCloud, FileSpreadsheet } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, FileCode } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function ImportPanel({ onImport, importLog, loading }) {
@@ -17,21 +17,25 @@ export default function ImportPanel({ onImport, importLog, loading }) {
         onDragLeave={() => setDragOver(false)}
         onDrop={(e) => { e.preventDefault(); setDragOver(false); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }}
         className={cn(
-          'border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors',
+          'border-2 border-dashed rounded-2xl p-7 text-center cursor-pointer transition-colors',
           dragOver ? 'border-sky-400 bg-sky-500/5' : 'border-slate-700/60 hover:border-slate-600 bg-slate-800/20'
         )}
       >
         <UploadCloud className="w-8 h-8 mx-auto mb-2 text-slate-500" />
-        <p className="text-xs text-slate-400 leading-relaxed">Glissez votre fichier Excel ici<br />ou cliquez pour sélectionner</p>
-        <p className="text-[11px] text-slate-600 mt-1.5">.xlsx / .xls</p>
+        <p className="text-xs text-slate-400 leading-relaxed">Glissez votre fichier ici<br />ou cliquez pour sélectionner</p>
+        <p className="text-[11px] text-slate-600 mt-1.5 flex items-center justify-center gap-2">
+          <span className="flex items-center gap-1"><FileSpreadsheet className="w-3 h-3" /> Excel</span>
+          <span className="text-slate-700">·</span>
+          <span className="flex items-center gap-1"><FileCode className="w-3 h-3" /> HTML</span>
+        </p>
       </div>
       <input
-        ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+        ref={fileRef} type="file" accept=".xlsx,.xls,.html,.htm" className="hidden"
         onChange={(e) => { if (e.target.files[0]) handleFile(e.target.files[0]); e.target.value = ''; }}
       />
 
       <div className="flex items-center gap-2 mt-3 px-1">
-        <span className="text-[11px] text-slate-500">Col. A contient :</span>
+        <span className="text-[11px] text-slate-500">Col. A (Excel) :</span>
         <select
           value={codeType} onChange={(e) => setCodeType(e.target.value)}
           className="bg-slate-900 text-slate-200 border border-slate-700 rounded-md px-2 py-1 text-[11px] cursor-pointer"
@@ -50,14 +54,20 @@ export default function ImportPanel({ onImport, importLog, loading }) {
         </div>
       )}
 
-      <div className="mt-3 rounded-xl bg-slate-800/30 border border-slate-700/40 p-3">
-        <h4 className="text-[11px] text-rose-400 font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><FileSpreadsheet className="w-3 h-3" /> Format attendu</h4>
-        <p className="text-[11px] text-slate-400 leading-relaxed">
-          <b>2 colonnes :</b><br />
-          Col. A : <span className="bg-sky-500/10 text-sky-300 px-1.5 py-0.5 rounded text-[10px] font-semibold">Code</span> · Col. B : <span className="bg-sky-500/10 text-sky-300 px-1.5 py-0.5 rounded text-[10px] font-semibold">Commercial</span><br /><br />
-          5 chiffres — auto-détection INSEE / postal.<br />
-          Ligne 1 = en-têtes (ignorée).
-        </p>
+      <div className="mt-3 rounded-xl bg-slate-800/30 border border-slate-700/40 p-3 space-y-2.5">
+        <div>
+          <h4 className="text-[11px] text-emerald-400 font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><FileSpreadsheet className="w-3 h-3" /> Format Excel</h4>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            <b>2 colonnes :</b> Col. A <span className="bg-sky-500/10 text-sky-300 px-1.5 py-0.5 rounded text-[10px] font-semibold">Code</span> · Col. B <span className="bg-sky-500/10 text-sky-300 px-1.5 py-0.5 rounded text-[10px] font-semibold">Commercial</span><br />
+            5 chiffres — auto INSEE/postal. Ligne 1 = en-têtes.
+          </p>
+        </div>
+        <div className="border-t border-slate-700/40 pt-2">
+          <h4 className="text-[11px] text-sky-400 font-bold uppercase tracking-wider mb-1.5 flex items-center gap-1.5"><FileCode className="w-3 h-3" /> Format HTML</h4>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            Importez un ancien fichier de carte HTML — les affectations code→commercial intégrées sont extraites automatiquement.
+          </p>
+        </div>
       </div>
     </div>
   );

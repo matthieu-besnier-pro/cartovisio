@@ -77,6 +77,117 @@ export async function fetchDeptBoundary(dept, deptGeoData, deptGeoLoaded) {
   }
 }
 
+// Fetch canton boundaries for a department (gregoiredavid/france-geojson)
+export async function fetchCantons(dept, cantonGeoData, cantonGeoLoaded) {
+  if (cantonGeoLoaded.has(dept)) return;
+  const slug = DEPT_SLUGS[dept];
+  if (!slug) { cantonGeoLoaded.add(dept); return; }
+  const url = `https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/departements/${dept}-${slug}/cantons-${dept}-${slug}.geojson`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const gj = await r.json();
+    cantonGeoData[dept] = gj;
+    cantonGeoLoaded.add(dept);
+  } catch (e) {
+    console.warn('Cantons err:', dept, e.message);
+    cantonGeoLoaded.add(dept);
+  }
+}
+
+// ── HTML import (re-use an existing map HTML file) ──
+// Extracts the code→vendeur assignments embedded in an old map HTML.
+function matchBraces(text, start) {
+  let depth = 0, inStr = false, q = null;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (c === '\\') { i++; continue; }
+      if (c === q) inStr = false;
+    } else {
+      if (c === '"' || c === "'" || c === '`') { inStr = true; q = c; }
+      else if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) return text.slice(start, i + 1); }
+    }
+  }
+  return null;
+}
+
+function scoreCV(obj) {
+  let score = 0;
+  for (const [k, v] of Object.entries(obj)) {
+    const code = String(k).trim().replace(/\.0$/, '').padStart(5, '0');
+    if (/^[0-9A-Z]{5}$/.test(code) && typeof v === 'string' && v.trim() && !/^\d+$/.test(v.trim())) score++;
+  }
+  return score;
+}
+
+function extractCVFromText(text, log) {
+  const candidates = [];
+  const assignRe = /(?:var|let|const)?\s*["']?(\w+)["']?\s*[:=]\s*(\{)/g;
+  let m;
+  while ((m = assignRe.exec(text)) !== null) {
+    const bracePos = m.index + m[0].length - 1;
+    const objStr = matchBraces(text, bracePos);
+    if (objStr) candidates.push({ name: m[1], str: objStr });
+  }
+  const scriptRe = /<script[^>]*type=["']application\/json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  while ((m = scriptRe.exec(text)) !== null) {
+    const t = m[1].trim();
+    if (t.startsWith('{')) { const objStr = matchBraces(t, 0); if (objStr) candidates.push({ name: 'json-script', str: objStr }); }
+  }
+  let best = null, bestScore = 0;
+  for (const cand of candidates) {
+    let parsed;
+    try { parsed = JSON.parse(cand.str); } catch { continue; }
+    if (Array.isArray(parsed)) {
+      const map = {};
+      let arrScore = 0;
+      for (const row of parsed) {
+        if (!row || typeof row !== 'object') continue;
+        const code = String(row.code || row.code_insee || row.insee || row.commune || '').trim().replace(/\.0$/, '').padStart(5, '0');
+        const vendeur = String(row.vendeur || row.commercial || row.secteur || row.value || row.nom || '').trim();
+        if (/^[0-9A-Z]{5}$/.test(code) && vendeur && !/^\d+$/.test(vendeur)) { map[code] = vendeur; arrScore++; }
+      }
+      if (arrScore > bestScore) { best = map; bestScore = arrScore; }
+    } else if (parsed && typeof parsed === 'object') {
+      const score = scoreCV(parsed);
+      if (score > bestScore) { best = parsed; bestScore = score; }
+      for (const [, v] of Object.entries(parsed)) {
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          const s2 = scoreCV(v);
+          if (s2 > bestScore) { best = v; bestScore = s2; }
+        }
+      }
+    }
+  }
+  if (best && bestScore > 0) {
+    const out = {};
+    for (const [k, v] of Object.entries(best)) {
+      const code = String(k).trim().replace(/\.0$/, '').padStart(5, '0');
+      if (typeof v === 'string' && v.trim()) out[code] = v.trim();
+    }
+    log(`Bloc de données détecté (${bestScore} affectations)`, 'ok');
+    return out;
+  }
+  return null;
+}
+
+export async function processHtmlFile(file, onLog) {
+  const log = (m, t) => onLog && onLog(m, t);
+  log(`📂 ${file.name}`);
+  const text = await file.text();
+  log(`${text.length} caractères lus`);
+  const cV = extractCVFromText(text, log);
+  if (!cV || !Object.keys(cV).length) {
+    throw new Error('Aucune affectation trouvée dans le HTML. Vérifiez que le fichier contient les données des secteurs (variable JSON code→commercial).');
+  }
+  const departments = [...new Set(Object.keys(cV).map(c => c.slice(0, 2)))];
+  log(`✅ ${Object.keys(cV).length} communes extraites`, 'ok');
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+  return { name, cV, departments };
+}
+
 // Ensure every vendeur in an overlay has a color assigned
 export function ensureOverlayColors(overlay, startIdx = 0) {
   if (!overlay.vColors) overlay.vColors = {};

@@ -8,14 +8,16 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
-  PALETTE, TILES, fetchDeptGeo, fetchDeptBoundary, ensureOverlayColors, syncCV,
-  processExcelFile, serializeOverlays, serializeMapView, parseOverlays, parseMapView, parseDepartments,
+  PALETTE, TILES, fetchDeptGeo, fetchDeptBoundary, fetchCantons, ensureOverlayColors, syncCV,
+  processExcelFile, processHtmlFile, serializeOverlays, serializeMapView, parseOverlays, parseMapView, parseDepartments,
 } from '@/lib/commercialMapUtils';
 import LegendSidebar from './LegendSidebar';
 import ImportPanel from './ImportPanel';
 import DataTableDrawer from './DataTableDrawer';
 import SettingsDrawer from './SettingsDrawer';
 import ExportModal from './ExportModal';
+import LayerPanel from './LayerPanel';
+import ChatbotPanel from './ChatbotPanel';
 
 const DEFAULT_STYLE = { fillOpacity: 0.65, dimOpacity: 0.06, borderWeight: 0.6, borderColor: '#ffffff', borderOpacity: 0.85, bordersOn: true };
 
@@ -28,6 +30,10 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   const deptLoadedRef = useRef(new Set());
   const deptGeoDataRef = useRef({});
   const deptGeoLoadedRef = useRef(new Set());
+  const cantonGeoDataRef = useRef({});
+  const cantonGeoLoadedRef = useRef(new Set());
+  const cantonLayerRef = useRef(null);
+  const ancCantonLayerRef = useRef(null);
   const allLRef = useRef({});
   const deptLayerRef = useRef(null);
 
@@ -55,7 +61,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sidebarTab, setSidebarTab] = useState('legend');
-  const [showDepts, setShowDepts] = useState(false);
+  const [layers, setLayers] = useState({ cantons: false, ancCantons: false, departements: false, contours: true });
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -238,13 +244,19 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     const map = L.map(containerRef.current, {
       center: mv ? [mv.lat, mv.lng] : [46.8, -0.5],
       zoom: mv?.zoom || 8,
-      zoomControl: true,
+      zoomControl: false,
     });
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
     mapRef.current = map;
     map.createPane('deptPane');
     map.getPane('deptPane').style.zIndex = 440;
     map.getPane('deptPane').style.pointerEvents = 'none';
     deptLayerRef.current = L.layerGroup([], { pane: 'deptPane' }).addTo(map);
+    map.createPane('cantonPane');
+    map.getPane('cantonPane').style.zIndex = 430;
+    map.getPane('cantonPane').style.pointerEvents = 'none';
+    cantonLayerRef.current = L.layerGroup([], { pane: 'cantonPane' }).addTo(map);
+    ancCantonLayerRef.current = L.layerGroup([], { pane: 'cantonPane' }).addTo(map);
 
     const t = TILES[tile] || TILES['carto-dark'];
     tileLayerRef.current = L.tileLayer(t.url, t.opts).addTo(map);
@@ -289,13 +301,16 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   useEffect(() => { renderAll(); }, [overlays, renderAll]);
   useEffect(() => { renderAll(); }, [style, renderAll]);
 
+  // Sync contours toggle with style.bordersOn
+  useEffect(() => { setStyle(s => ({ ...s, bordersOn: layers.contours })); }, [layers.contours]);
+
   // Department contours
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (!showDepts) { deptLayerRef.current.clearLayers(); return; }
+    if (!layers.departements) { deptLayerRef.current.clearLayers(); return; }
     const { cV } = syncCV(overlaysRef.current);
-    if (!Object.keys(cV).length) { toast({ title: 'Importez des données d\'abord', variant: 'destructive' }); setShowDepts(false); return; }
+    if (!Object.keys(cV).length) { toast({ title: 'Importez des données d\'abord', variant: 'destructive' }); setLayers(l => ({ ...l, departements: false })); return; }
     const depts = [...new Set(Object.keys(cV).map(c => c.slice(0, 2)))];
     (async () => {
       for (const d of depts) await fetchDeptBoundary(d, deptGeoDataRef.current, deptGeoLoadedRef.current);
@@ -303,12 +318,37 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       depts.forEach(d => {
         const feat = deptGeoDataRef.current[d];
         if (!feat) return;
-        window.L.geoJSON(feat, { pane: 'deptPane', style: { fill: false, color: '#fb923c', weight: 4, opacity: 0.8, dashArray: '12 6' } })
+        window.L.geoJSON(feat, { pane: 'deptPane', style: { fill: false, color: '#f97316', weight: 4, opacity: 0.85, dashArray: '12 6' } })
           .bindTooltip(`<b>${d}</b>`, { sticky: true, direction: 'top' })
           .addTo(deptLayerRef.current);
       });
     })();
-  }, [showDepts, overlays, toast]);
+  }, [layers.departements, overlays, toast]);
+
+  // Cantons + Anc. cantons (both sourced from canton GeoJSON, distinct styles)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const renderCantons = async (layerRef, color, weight, dash) => {
+      const { cV } = syncCV(overlaysRef.current);
+      const depts = Object.keys(cV).length
+        ? [...new Set(Object.keys(cV).map(c => c.slice(0, 2)))]
+        : [...deptLoadedRef.current];
+      if (!depts.length) { toast({ title: 'Importez ou chargez des données d\'abord', variant: 'destructive' }); setLayers(l => ({ ...l, cantons: false, ancCantons: false })); return; }
+      for (const d of depts) await fetchCantons(d, cantonGeoDataRef.current, cantonGeoLoadedRef.current);
+      layerRef.current.clearLayers();
+      depts.forEach(d => {
+        const gj = cantonGeoDataRef.current[d];
+        if (!gj || !gj.features) return;
+        window.L.geoJSON(gj, { pane: 'cantonPane', style: { fill: false, color, weight, opacity: 0.7, dashArray: dash } })
+          .addTo(layerRef.current);
+      });
+    };
+    if (layers.cantons) renderCantons(cantonLayerRef, '#10b981', 2.5, null);
+    else cantonLayerRef.current.clearLayers();
+    if (layers.ancCantons) renderCantons(ancCantonLayerRef, '#fbbf24', 2, '8 4');
+    else ancCantonLayerRef.current.clearLayers();
+  }, [layers.cantons, layers.ancCantons, overlays, toast]);
 
   // Search commune in edit mode
   useEffect(() => {
@@ -326,7 +366,10 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
     setImportLog([]);
     try {
       const onLog = (msg, type) => setImportLog(prev => [...prev, { msg, type }]);
-      const { name, cV, departments } = await processExcelFile(file, codeType, onLog);
+      const isHtml = /\.(html?|htm)$/i.test(file.name);
+      const { name, cV, departments } = isHtml
+        ? await processHtmlFile(file, onLog)
+        : await processExcelFile(file, codeType, onLog);
       // Load departments
       onLog(`Chargement de ${departments.length} département(s)...`, '');
       for (const d of departments) await fetchDeptGeo(d, geoDataRef.current, deptLoadedRef.current);
@@ -423,6 +466,80 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
   };
   const tableRemove = (code) => setOverlays(prev => { const next = prev.map(o => { const cV = { ...o.cV }; delete cV[code]; return { ...o, cV }; }); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
 
+  const clearAll = () => {
+    setOverlays(prev => { overlaysRef.current = []; setTimeout(renderAll, 0); return []; });
+    toast({ title: 'Toutes les données effacées' });
+  };
+
+  // Resolve a commune by fuzzy name or code from loaded geo data
+  const resolveCommune = (query) => {
+    if (!query) return null;
+    const q = query.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const code = query.trim().padStart(5, '0');
+    if (/^[0-9A-Z]{5}$/.test(code) && geoDataRef.current[code]) return code;
+    let best = null, bestScore = Infinity;
+    for (const [c, f] of Object.entries(geoDataRef.current)) {
+      const n = (f.properties?.nom || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (n === q) return c;
+      if (n.startsWith(q) && n.length - q.length < bestScore) { best = c; bestScore = n.length - q.length; }
+      else if (n.includes(q) && !best) best = c;
+    }
+    return best;
+  };
+
+  // Apply an action returned by the AI chatbot
+  const handleChatAction = (action) => {
+    try {
+      if (action.action === 'assign') {
+        const code = resolveCommune(action.commune);
+        if (!code) { toast({ title: `Commune « ${action.commune} » introuvable`, variant: 'destructive' }); return; }
+        const vendeur = action.vendor?.trim();
+        if (!vendeur) { toast({ title: 'Commercial manquant', variant: 'destructive' }); return; }
+        const nom = geoDataRef.current[code].properties?.nom || code;
+        setOverlays(prev => {
+          let next = [...prev];
+          if (!next.length) next.push({ id: Date.now(), name: 'Secteurs', cV: {}, vColors: {}, opacity: styleRef.current.fillOpacity, visible: true });
+          next = next.map((o, i) => {
+            if (i !== next.length - 1) { const cV = { ...o.cV }; delete cV[code]; return { ...o, cV }; }
+            return { ...o, cV: { ...o.cV, [code]: vendeur } };
+          });
+          ensureOverlayColors(next[next.length - 1]);
+          overlaysRef.current = next;
+          setTimeout(renderAll, 0);
+          return next;
+        });
+        toast({ title: `"${nom}" → ${vendeur}` });
+      } else if (action.action === 'remove') {
+        const code = resolveCommune(action.commune);
+        if (!code) { toast({ title: `Commune introuvable`, variant: 'destructive' }); return; }
+        tableRemove(code);
+      } else if (action.action === 'setColor') {
+        changeColor(overlays[overlays.length - 1]?.id, action.vendor, action.color);
+      } else if (action.action === 'showOnly') {
+        toggleVendor(action.vendor);
+      } else if (action.action === 'showAll') {
+        showAll();
+      } else if (action.action === 'rename') {
+        const oldName = action.vendor?.trim();
+        const newName = action.newName?.trim();
+        if (!oldName || !newName) return;
+        setOverlays(prev => {
+          const next = prev.map(o => {
+            const cV = {}; Object.entries(o.cV || {}).forEach(([c, v]) => { cV[c] = v === oldName ? newName : v; });
+            const vColors = {}; Object.entries(o.vColors || {}).forEach(([v, col]) => { vColors[v === oldName ? newName : v] = col; });
+            return { ...o, cV, vColors };
+          });
+          overlaysRef.current = next;
+          setTimeout(renderAll, 0);
+          return next;
+        });
+        toast({ title: `${oldName} → ${newName}` });
+      }
+    } catch (e) {
+      toast({ title: 'Action échouée', description: e.message, variant: 'destructive' });
+    }
+  };
+
   const selectFromSearch = async (code, nom) => {
     setSearchQuery(''); setSearchResults([]);
     const dept = code.slice(0, 2);
@@ -442,6 +559,8 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
 
   const vendors = [...new Set(overlays.flatMap(o => Object.values(o.cV || {})))].sort();
   const accent = record?.accentColor || '#f43f5e';
+  const chatVendors = vendors.map(name => ({ name, count: overlays.reduce((s, o) => s + Object.values(o.cV || {}).filter(v => v === name).length, 0) }));
+  const communeNames = Object.values(geoDataRef.current).map(f => f.properties?.nom).filter(Boolean);
 
   return (
     <div className="fixed inset-0 flex flex-col bg-slate-950 text-slate-200 overflow-hidden" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -480,11 +599,15 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
         </div>
       </header>
 
-      {/* Layer toolbar */}
-      <div className="absolute top-[60px] left-2.5 z-[800] bg-slate-950/88 backdrop-blur rounded-xl p-1.5 flex flex-col gap-0.5 border border-slate-800/60 shadow-xl">
-        <LayerToggle active={style.bordersOn} onClick={() => setStyle(s => ({ ...s, bordersOn: !s.bordersOn }))} color="#94a3b8" label="Contours" />
-        <LayerToggle active={showDepts} onClick={() => setShowDepts(!showDepts)} color="#fb923c" label="Départements" />
-      </div>
+      {/* Layer & data panel */}
+      <LayerPanel
+        layers={layers}
+        onToggleLayer={(key) => setLayers(l => ({ ...l, [key]: !l[key] }))}
+        overlays={overlays}
+        onManage={() => setTableOpen(true)}
+        onClearAll={clearAll}
+        readOnly={readOnly}
+      />
 
       {/* Main */}
       <div className="flex flex-1 overflow-hidden relative">
@@ -566,6 +689,9 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
       {!readOnly && <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} style={style} onStyle={setStyle} tile={tile} onTile={setTile} />}
       <ExportModal open={showExport} onClose={() => setShowExport(false)} overlays={overlays} geoData={geoDataRef.current} title={record?.title} accent={accent} />
 
+      {/* AI chatbot */}
+      {!readOnly && <ChatbotPanel vendors={chatVendors} communeNames={communeNames} onAction={handleChatAction} />}
+
       <style>{`
         .cmap-popup .leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
         .leaflet-control-zoom a { background: rgba(15,23,42,.9)!important; color: #94a3b8!important; border-color: rgba(148,163,184,.08)!important; border-radius: 10px!important; }
@@ -587,15 +713,6 @@ function TabBtn({ children, active, onClick, icon }) {
   return (
     <button onClick={onClick} className={cn('flex-1 py-3 px-2 text-xs font-semibold flex flex-col items-center gap-1 border-b-2 transition-colors', active ? 'text-slate-100 border-rose-500 bg-rose-500/5' : 'text-slate-500 border-transparent hover:text-slate-300')}>
       {icon} {children}
-    </button>
-  );
-}
-
-function LayerToggle({ active, onClick, color, label }) {
-  return (
-    <button onClick={onClick} className={cn('flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors w-full text-left', active ? 'bg-slate-700/40 text-slate-100' : 'text-slate-500 hover:bg-slate-800/40 hover:text-slate-300')}>
-      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: color, boxShadow: active ? `0 0 8px ${color}` : 'none' }} />
-      {label}
     </button>
   );
 }
