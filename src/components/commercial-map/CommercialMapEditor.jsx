@@ -482,7 +482,7 @@ export default function CommercialMapEditor({ record, readOnly = false, onSave }
 
       {/* Layer toolbar */}
       <div className="absolute top-[60px] left-2.5 z-[800] bg-slate-950/88 backdrop-blur rounded-xl p-1.5 flex flex-col gap-0.5 border border-slate-800/60 shadow-xl">
-        <LayerToggle active={showBorders} onClick={() => { setStyle(s => ({ ...s, bordersOn: !s.bordersOn })); setShowBorders(!showBorders); }} color="#94a3b8" label="Contours" />
+        <LayerToggle active={style.bordersOn} onClick={() => setStyle(s => ({ ...s, bordersOn: !s.bordersOn }))} color="#94a3b8" label="Contours" />
         <LayerToggle active={showDepts} onClick={() => setShowDepts(!showDepts)} color="#fb923c" label="Départements" />
       </div>
 
