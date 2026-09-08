@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin, Link2 } from 'lucide-react';
-import { syncCV, genShareToken } from '@/lib/commercialMapUtils';
+import { syncCV, genShareToken, readFieldContent } from '@/lib/commercialMapUtils';
 
 export default function MapsGallery() {
   const navigate = useNavigate();
@@ -23,7 +23,13 @@ export default function MapsGallery() {
     setLoading(true);
     try {
       const list = await base44.entities.CommercialMap.list('-created_date', 100);
-      setMaps(list);
+      // overlays is stored as a file URL (large field offload): fetch + parse it to compute card stats.
+      const enriched = await Promise.all(list.map(async m => {
+        let ov = [];
+        try { ov = JSON.parse((await readFieldContent(m.overlays)) || '[]'); } catch { ov = []; }
+        return { ...m, _overlaysParsed: ov };
+      }));
+      setMaps(enriched);
     } catch (e) {
       toast({ title: 'Erreur de chargement', description: e.message, variant: 'destructive' });
     } finally {
@@ -127,7 +133,7 @@ export default function MapsGallery() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {maps.map(m => {
-              const { cV } = syncCV(typeof m.overlays === 'string' ? JSON.parse(m.overlays || '[]') : (m.overlays || []));
+              const { cV } = syncCV(m._overlaysParsed || []);
               const count = Object.keys(cV).length;
               const vendors = new Set(Object.values(cV)).size;
               const accent = m.accentColor || '#f43f5e';
