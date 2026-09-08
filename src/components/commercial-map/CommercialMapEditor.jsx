@@ -393,6 +393,13 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
     if (t) { tileLayerRef.current = window.L.tileLayer(t.url, t.opts).addTo(map); tileLayerRef.current.bringToBack(); }
   }, [tile]);
 
+  // Force Leaflet to recompute tile rendering when edit mode / sidebar toggles
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    setTimeout(() => map.invalidateSize(), 200);
+  }, [editMode, sidebarOpen]);
+
   // Re-render layers when overlays or style change
   useEffect(() => { renderAll(); }, [overlays, renderAll]);
   useEffect(() => { renderAll(); }, [style, renderAll]);
@@ -767,7 +774,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
 
       {/* Main */}
       <div className="flex flex-1 overflow-hidden relative">
-        <div ref={containerRef} className={cn('flex-1 z-[1] transition-all', editMode && 'cursor-crosshair')} style={{ background: '#1a1a2e' }} />
+        <div ref={containerRef} className={cn('flex-1 z-[1]', editMode && 'cursor-crosshair')} style={{ background: '#1a1a2e' }} />
 
         {/* Sidebar */}
         {!readOnly && (
@@ -799,7 +806,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
 
       {/* Edit bar */}
       {editMode && !readOnly && (
-        <div className="fixed bottom-7 left-1/2 -translate-x-1/2 z-[900] bg-slate-900/95 backdrop-blur-xl border border-violet-500/30 rounded-2xl px-4 py-2.5 flex items-center gap-3 flex-wrap shadow-2xl max-w-[92vw]">
+        <div className="fixed bottom-7 left-1/2 -translate-x-1/2 z-[900] bg-slate-900 border border-violet-500/30 rounded-2xl px-4 py-2.5 flex items-center gap-3 flex-wrap shadow-2xl max-w-[92vw]">
           <span className="text-xs font-semibold text-violet-300">✏️ Édition</span>
           <div className="flex gap-1">
             <button onClick={() => setEditAction('add')} className={cn('px-2.5 py-1.5 rounded-lg text-xs font-semibold transition', editAction === 'add' ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40' : 'bg-slate-800/60 text-slate-400')}><Plus className="w-3 h-3 inline mr-1" />Ajouter</button>
