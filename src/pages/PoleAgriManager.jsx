@@ -44,7 +44,8 @@ export default function PoleAgriManager() {
   const filiales = useMemo(() => {
     const m = new Map();
     KNOWN_FILIALES.forEach(n => { const k = filialeKey(n); if (k) m.set(k, n); });
-    points.forEach(p => { const k = filialeKey(p.category); if (k && !m.has(k)) m.set(k, (p.category || '').trim()); });
+    // Filiale is stored either in the point's category or (most often) its name.
+    points.forEach(p => { const lbl = (p.category || p.name || '').trim(); const k = filialeKey(lbl); if (k && !m.has(k)) m.set(k, lbl); });
     filialeIcons.forEach(r => { const k = filialeKey(r.name); if (k && !m.has(k)) m.set(k, (r.name || '').trim()); });
     return [...m.values()].sort((a, b) => a.localeCompare(b, 'fr'));
   }, [points, filialeIcons]);

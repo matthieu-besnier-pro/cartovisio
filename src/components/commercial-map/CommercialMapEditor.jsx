@@ -223,7 +223,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
     markersLayerRef.current.clearLayers();
     if (!layers.poleAgri) return;
     [...markersRef.current, ...globalPointsRef.current].forEach(mk => {
-      const fs = resolveMarkerStyle(mk.category, filialeIconsRef.current);
+      const fs = resolveMarkerStyle(mk.category || mk.name, filialeIconsRef.current);
       const c = fs.color;
       const inner = fs.logoUrl
         ? `<img src="${escapeHtml(fs.logoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
