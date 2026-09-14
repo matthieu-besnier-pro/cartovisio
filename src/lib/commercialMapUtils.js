@@ -31,16 +31,54 @@ export function filialeStyle(category) {
   return { color: fallback, gradient: `linear-gradient(135deg,${fallback},${fallback}cc)`, emoji: '🌾' };
 }
 
+// Canonical filiale names known to the app. Always offered in the icon manager
+// (even before any point with that category exists) so their logo can be set.
+// Derived from the brands recognized by filialeStyle().
+export const KNOWN_FILIALES = [
+  'MIGAUD',
+  'AGRI SANTERRE',
+  'CASE IH',
+  'NEW HOLLAND',
+  'GONNIN-DURIS',
+  'MONTAUBAN',
+  'SICLOE',
+  'TMC',
+  'EXCEL',
+  'PY',
+  'AGRIZONE',
+];
+
 // Normalize a filiale/category name for matching (lowercase, no accents, trimmed).
 export function normalizeFiliale(name) {
   return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
 }
 
-// Build a lookup Map (normalized name -> { logoUrl, color }) from FilialeIcon records.
+// Canonical filiale key from a free-text category, using the same brand keywords
+// as filialeStyle(). This lets an uploaded logo match points whose category is
+// spelled slightly differently (e.g. "CASE IH" logo <-> "Case" point).
+// Falls back to the normalized name when no known brand keyword is found.
+export function filialeKey(category) {
+  const c = normalizeFiliale(category);
+  if (!c) return '';
+  if (c.includes('excel')) return 'excel';
+  if (c.includes('agrizone')) return 'agrizone';
+  if (c.includes('migaud')) return 'migaud';
+  if (c.includes('santerre')) return 'agri-santerre';
+  if (c.includes('new holland') || c.includes('newholland')) return 'new-holland';
+  if (c.includes('gonnin')) return 'gonnin';
+  if (c.includes('montauban')) return 'montauban';
+  if (c.includes('sicloe')) return 'sicloe';
+  if (c.includes('case')) return 'case';
+  if (c.includes('tmc')) return 'tmc';
+  if (c.includes('py')) return 'py';
+  return c;
+}
+
+// Build a lookup Map (filiale key -> { logoUrl, color }) from FilialeIcon records.
 export function buildFilialeIconMap(records) {
   const map = new Map();
   (records || []).forEach(r => {
-    const key = normalizeFiliale(r.name);
+    const key = filialeKey(r.name);
     if (!key) return;
     map.set(key, { logoUrl: r.logoUrl || '', color: r.color || '' });
   });
@@ -51,7 +89,7 @@ export function buildFilialeIconMap(records) {
 // (from a FilialeIcon map) and falling back to the built-in emoji + color.
 export function resolveMarkerStyle(category, iconMap) {
   const base = filialeStyle(category);
-  const custom = iconMap && iconMap.get(normalizeFiliale(category));
+  const custom = iconMap && iconMap.get(filialeKey(category));
   if (custom && (custom.logoUrl || custom.color)) {
     return { ...base, logoUrl: custom.logoUrl || null, color: custom.color || base.color };
   }

@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import { ChevronLeft, Upload, Plus, Trash2, Loader2, MapPin, Image as ImageIcon, X } from 'lucide-react';
 import {
-  processKmlFile, processKmzFile, processGpxFile, processPointsFile, filialeStyle, normalizeFiliale,
+  processKmlFile, processKmzFile, processGpxFile, processPointsFile, filialeStyle, filialeKey, KNOWN_FILIALES,
 } from '@/lib/commercialMapUtils';
 
 export default function PoleAgriManager() {
@@ -39,15 +39,17 @@ export default function PoleAgriManager() {
   };
   useEffect(() => { load(); loadIcons(); }, []);
 
-  // Distinct filiale names: from points' categories + any icon already saved.
+  // Filiale names: always the known brands, plus any category found in the
+  // points and any icon already saved (deduped by canonical filiale key).
   const filiales = useMemo(() => {
     const m = new Map();
-    points.forEach(p => { const k = normalizeFiliale(p.category); if (k) m.set(k, (p.category || '').trim()); });
-    filialeIcons.forEach(r => { const k = normalizeFiliale(r.name); if (k && !m.has(k)) m.set(k, (r.name || '').trim()); });
+    KNOWN_FILIALES.forEach(n => { const k = filialeKey(n); if (k) m.set(k, n); });
+    points.forEach(p => { const k = filialeKey(p.category); if (k && !m.has(k)) m.set(k, (p.category || '').trim()); });
+    filialeIcons.forEach(r => { const k = filialeKey(r.name); if (k && !m.has(k)) m.set(k, (r.name || '').trim()); });
     return [...m.values()].sort((a, b) => a.localeCompare(b, 'fr'));
   }, [points, filialeIcons]);
 
-  const iconFor = (name) => filialeIcons.find(r => normalizeFiliale(r.name) === normalizeFiliale(name));
+  const iconFor = (name) => filialeIcons.find(r => filialeKey(r.name) === filialeKey(name));
 
   const upsertIcon = async (name, patch) => {
     const existing = iconFor(name);
