@@ -1,19 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
-import { ChevronLeft, Upload, Plus, Trash2, Loader2, MapPin } from 'lucide-react';
+import { ChevronLeft, Upload, Plus, Trash2, Loader2, MapPin, Image as ImageIcon, X } from 'lucide-react';
 import {
-  processKmlFile, processKmzFile, processGpxFile, processPointsFile, filialeStyle,
+  processKmlFile, processKmzFile, processGpxFile, processPointsFile, filialeStyle, normalizeFiliale,
 } from '@/lib/commercialMapUtils';
 
 export default function PoleAgriManager() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const fileRef = useRef(null);
+  const logoInputRef = useRef(null);
+  const pendingFilialeRef = useRef('');
   const [points, setPoints] = useState([]);
+  const [filialeIcons, setFilialeIcons] = useState([]);
+  const [iconBusy, setIconBusy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [form, setForm] = useState({ name: '', category: '', lat: '', lng: '', postalCode: '', city: '', address: '' });
@@ -27,7 +31,56 @@ export default function PoleAgriManager() {
       toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     } finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  const loadIcons = async () => {
+    try {
+      const list = await base44.entities.FilialeIcon.list('-updated_date', 1000);
+      setFilialeIcons(list || []);
+    } catch (e) { /* entity may not exist yet before first publish */ }
+  };
+  useEffect(() => { load(); loadIcons(); }, []);
+
+  // Distinct filiale names: from points' categories + any icon already saved.
+  const filiales = useMemo(() => {
+    const m = new Map();
+    points.forEach(p => { const k = normalizeFiliale(p.category); if (k) m.set(k, (p.category || '').trim()); });
+    filialeIcons.forEach(r => { const k = normalizeFiliale(r.name); if (k && !m.has(k)) m.set(k, (r.name || '').trim()); });
+    return [...m.values()].sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [points, filialeIcons]);
+
+  const iconFor = (name) => filialeIcons.find(r => normalizeFiliale(r.name) === normalizeFiliale(name));
+
+  const upsertIcon = async (name, patch) => {
+    const existing = iconFor(name);
+    if (existing) await base44.entities.FilialeIcon.update(existing.id, patch);
+    else await base44.entities.FilialeIcon.create({ name: (name || '').trim(), ...patch });
+    await loadIcons();
+  };
+
+  const triggerLogoUpload = (name) => { pendingFilialeRef.current = name; logoInputRef.current?.click(); };
+
+  const handleLogoFile = async (file) => {
+    const name = pendingFilialeRef.current;
+    if (!file || !name) return;
+    setIconBusy(name);
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      await upsertIcon(name, { logoUrl: file_url });
+      toast({ title: 'Logo mis à jour ✓' });
+    } catch (e) {
+      toast({ title: 'Erreur upload', description: e.message, variant: 'destructive' });
+    } finally {
+      setIconBusy(null);
+      pendingFilialeRef.current = '';
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  };
+
+  const handleRemoveLogo = async (name) => {
+    setIconBusy(name);
+    try { await upsertIcon(name, { logoUrl: '' }); toast({ title: 'Logo retiré' }); }
+    catch (e) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
+    finally { setIconBusy(null); }
+  };
 
   const handleImport = async (file) => {
     setImporting(true);
@@ -116,6 +169,47 @@ export default function PoleAgriManager() {
             <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Adresse (option)" className="flex-1" />
             <Button onClick={handleAdd} className="gap-1.5 bg-green-600 hover:bg-green-700"><Plus className="w-4 h-4" /> Ajouter</Button>
           </div>
+        </div>
+
+        {/* Icônes par filiale */}
+        <div className="rounded-2xl bg-slate-900/60 border border-slate-800/60 p-4 mb-6">
+          <div className="flex items-center gap-2 mb-1">
+            <ImageIcon className="w-4 h-4 text-green-400" />
+            <h3 className="text-sm font-bold text-slate-200">Icônes par filiale</h3>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">Uploadez un logo par filiale : il remplace l'icône automatique sur toutes les cartes. Sans logo, l'icône par défaut (emoji) est utilisée.</p>
+          <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files[0] && handleLogoFile(e.target.files[0])} />
+          {filiales.length === 0 ? (
+            <p className="text-xs text-slate-600">Aucune filiale détectée. Ajoutez des points avec une catégorie pour pouvoir leur associer un logo.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {filiales.map(name => {
+                const rec = iconFor(name);
+                const fs = filialeStyle(name);
+                const busy = iconBusy === name;
+                return (
+                  <div key={name} className="flex items-center gap-3 rounded-xl bg-slate-800/40 border border-slate-800/60 px-3 py-2">
+                    <div className="w-9 h-9 rounded-full border-2 border-white/80 shrink-0 flex items-center justify-center overflow-hidden text-base" style={{ background: rec?.logoUrl ? '#fff' : fs.gradient }}>
+                      {rec?.logoUrl
+                        ? <img src={rec.logoUrl} alt="" className="w-full h-full object-cover" />
+                        : <span>{fs.emoji}</span>}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-slate-200 font-medium truncate" title={name}>{name}</div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <button onClick={() => triggerLogoUpload(name)} disabled={busy} className="text-xs text-green-400 hover:text-green-300 inline-flex items-center gap-1 disabled:opacity-50">
+                          {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}{rec?.logoUrl ? 'Changer' : 'Ajouter un logo'}
+                        </button>
+                        {rec?.logoUrl && (
+                          <button onClick={() => handleRemoveLogo(name)} disabled={busy} className="text-xs text-slate-500 hover:text-rose-400 inline-flex items-center gap-1 disabled:opacity-50"><X className="w-3 h-3" /> Retirer</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {loading ? (

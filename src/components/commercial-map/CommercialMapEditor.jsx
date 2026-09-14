@@ -11,7 +11,7 @@ import { base44 } from '@/api/base44Client';
 import {
   PALETTE, TILES, fetchDeptGeo, fetchDeptBoundary, fetchCantons, ensureOverlayColors, syncCV,
   processExcelFile, processHtmlFile, processJsonFile, processKmlFile, processKmzFile, processGpxFile,
-  serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers, filialeStyle, storeLargeField, readFieldContent,
+  serializeOverlays, serializeMapView, serializeMarkers, parseOverlays, parseMapView, parseDepartments, parseMarkers, resolveMarkerStyle, buildFilialeIconMap, storeLargeField, readFieldContent,
 } from '@/lib/commercialMapUtils';
 import LegendSidebar from './LegendSidebar';
 import ImportPanel from './ImportPanel';
@@ -86,6 +86,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
   const [markers, setMarkers] = useState([]);
   const [globalPoints, setGlobalPoints] = useState([]);
   const globalPointsRef = useRef([]);
+  const filialeIconsRef = useRef(new Map());
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -222,11 +223,15 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
     markersLayerRef.current.clearLayers();
     if (!layers.poleAgri) return;
     [...markersRef.current, ...globalPointsRef.current].forEach(mk => {
-      const fs = filialeStyle(mk.category);
+      const fs = resolveMarkerStyle(mk.category, filialeIconsRef.current);
       const c = fs.color;
+      const inner = fs.logoUrl
+        ? `<img src="${escapeHtml(fs.logoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
+        : fs.emoji;
+      const bg = fs.logoUrl ? '#fff' : fs.gradient;
       const icon = L.divIcon({
         className: 'pa-marker',
-        html: `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:28px;height:28px;border-radius:50%;background:${fs.gradient};border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1">${fs.emoji}</div><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${c}"></div></div>`,
+        html: `<div style="display:flex;flex-direction:column;align-items:center"><div style="width:28px;height:28px;border-radius:50%;background:${bg};border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;overflow:hidden">${inner}</div><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid ${c}"></div></div>`,
         iconSize: [28, 35],
         iconAnchor: [14, 35],
         popupAnchor: [0, -33],
@@ -364,6 +369,11 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
       }
       renderAll();
       renderMarkers();
+      // Load custom filiale logos/colors (shared across all maps), then points
+      base44.entities.FilialeIcon.list('-updated_date', 1000).then(icons => {
+        filialeIconsRef.current = buildFilialeIconMap(icons || []);
+        renderMarkers();
+      }).catch(() => {});
       // Load global Pôle Agri points (shared layer across all maps)
       base44.entities.PoleAgriPoint.list('-updated_date', 5000).then(pts => {
         globalPointsRef.current = pts || [];

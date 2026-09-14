@@ -31,6 +31,33 @@ export function filialeStyle(category) {
   return { color: fallback, gradient: `linear-gradient(135deg,${fallback},${fallback}cc)`, emoji: '🌾' };
 }
 
+// Normalize a filiale/category name for matching (lowercase, no accents, trimmed).
+export function normalizeFiliale(name) {
+  return (name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+}
+
+// Build a lookup Map (normalized name -> { logoUrl, color }) from FilialeIcon records.
+export function buildFilialeIconMap(records) {
+  const map = new Map();
+  (records || []).forEach(r => {
+    const key = normalizeFiliale(r.name);
+    if (!key) return;
+    map.set(key, { logoUrl: r.logoUrl || '', color: r.color || '' });
+  });
+  return map;
+}
+
+// Resolve the marker style for a category, preferring a custom uploaded logo/color
+// (from a FilialeIcon map) and falling back to the built-in emoji + color.
+export function resolveMarkerStyle(category, iconMap) {
+  const base = filialeStyle(category);
+  const custom = iconMap && iconMap.get(normalizeFiliale(category));
+  if (custom && (custom.logoUrl || custom.color)) {
+    return { ...base, logoUrl: custom.logoUrl || null, color: custom.color || base.color };
+  }
+  return { ...base, logoUrl: null };
+}
+
 // Large JSON fields are stored as uploaded files to respect entity field size limits.
 // Always upload: the platform enforces a hard size limit on entity string fields that
 // even moderate overlay JSON exceeds, so we offload every save to a file URL.

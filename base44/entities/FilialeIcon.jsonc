@@ -1,0 +1,21 @@
+{
+  "name": "FilialeIcon",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Filiale/category name, matched to PoleAgriPoint.category (case-insensitive, accent-insensitive)"
+    },
+    "logoUrl": {
+      "type": "string",
+      "description": "Uploaded logo image URL used as the map marker for this filiale"
+    },
+    "color": {
+      "type": "string",
+      "description": "Accent color for the marker ring/pin (hex, e.g. #16a34a)"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
