@@ -4,10 +4,11 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
-import { ChevronLeft, Upload, Plus, Trash2, Loader2, MapPin, Image as ImageIcon, X } from 'lucide-react';
+import { ChevronLeft, Upload, Plus, Trash2, Loader2, MapPin, Crop, Sparkles } from 'lucide-react';
 import {
   processKmlFile, processKmzFile, processGpxFile, processPointsFile, filialeStyle, filialeKey, KNOWN_FILIALES,
 } from '@/lib/commercialMapUtils';
+import LogoCropper from '@/components/pole-agri/LogoCropper';
 
 export default function PoleAgriManager() {
   const navigate = useNavigate();
@@ -59,22 +60,46 @@ export default function PoleAgriManager() {
     await loadIcons();
   };
 
-  const triggerLogoUpload = (name) => { pendingFilialeRef.current = name; logoInputRef.current?.click(); };
+  // ── Logo studio (crop + preview) ──
+  const [cropper, setCropper] = useState(null); // { name, src, color, isObjectUrl }
+  const [dragName, setDragName] = useState(null);
 
-  const handleLogoFile = async (file) => {
+  const openWithFile = (name, file) => {
+    if (!file || !file.type.startsWith('image/')) { toast({ title: 'Image requise', description: 'Formats: PNG, JPG, SVG…', variant: 'destructive' }); return; }
+    const src = URL.createObjectURL(file);
+    setCropper({ name, src, color: iconFor(name)?.color || filialeStyle(name).color, isObjectUrl: true });
+  };
+  const openRecrop = (name) => {
+    const rec = iconFor(name);
+    if (!rec?.logoUrl) return;
+    setCropper({ name, src: rec.logoUrl, color: rec.color || filialeStyle(name).color, isObjectUrl: false });
+  };
+  const closeCropper = () => {
+    setCropper(c => { if (c?.isObjectUrl) URL.revokeObjectURL(c.src); return null; });
+  };
+
+  const triggerLogoUpload = (name) => { pendingFilialeRef.current = name; logoInputRef.current?.click(); };
+  const handleLogoFile = (file) => {
     const name = pendingFilialeRef.current;
-    if (!file || !name) return;
+    pendingFilialeRef.current = '';
+    if (logoInputRef.current) logoInputRef.current.value = '';
+    if (name && file) openWithFile(name, file);
+  };
+
+  const handleCropSave = async (blob, color) => {
+    const name = cropper?.name;
+    if (!name) return;
     setIconBusy(name);
     try {
+      const file = new File([blob], `logo-${filialeKey(name) || 'filiale'}.png`, { type: 'image/png' });
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      await upsertIcon(name, { logoUrl: file_url });
-      toast({ title: 'Logo mis à jour ✓' });
+      await upsertIcon(name, { logoUrl: file_url, color });
+      toast({ title: 'Logo enregistré ✓', description: name });
+      closeCropper();
     } catch (e) {
-      toast({ title: 'Erreur upload', description: e.message, variant: 'destructive' });
+      toast({ title: 'Erreur', description: e.message, variant: 'destructive' });
     } finally {
       setIconBusy(null);
-      pendingFilialeRef.current = '';
-      if (logoInputRef.current) logoInputRef.current.value = '';
     }
   };
 
@@ -83,6 +108,13 @@ export default function PoleAgriManager() {
     try { await upsertIcon(name, { logoUrl: '' }); toast({ title: 'Logo retiré' }); }
     catch (e) { toast({ title: 'Erreur', description: e.message, variant: 'destructive' }); }
     finally { setIconBusy(null); }
+  };
+
+  // Drag & drop onto a filiale card
+  const onCardDrop = (name, e) => {
+    e.preventDefault(); setDragName(null);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) openWithFile(name, file);
   };
 
   const handleImport = async (file) => {
@@ -174,45 +206,61 @@ export default function PoleAgriManager() {
           </div>
         </div>
 
-        {/* Icônes par filiale */}
+        {/* Icônes par filiale — studio de logos */}
         <div className="rounded-2xl bg-slate-900/60 border border-slate-800/60 p-4 mb-6">
           <div className="flex items-center gap-2 mb-1">
-            <ImageIcon className="w-4 h-4 text-green-400" />
-            <h3 className="text-sm font-bold text-slate-200">Icônes par filiale</h3>
+            <Sparkles className="w-4 h-4 text-green-400" />
+            <h3 className="text-sm font-bold text-slate-200">Logos par filiale</h3>
+            <span className="text-[10px] font-semibold text-green-400/80 bg-green-500/10 border border-green-500/20 rounded-full px-2 py-0.5">Studio</span>
           </div>
-          <p className="text-xs text-slate-500 mb-3">Uploadez un logo par filiale : il remplace l'icône automatique sur toutes les cartes. Sans logo, l'icône par défaut (emoji) est utilisée.</p>
+          <p className="text-xs text-slate-500 mb-4">Glissez un logo sur une filiale (ou cliquez) : recadrez-le en cercle, ajustez la couleur, et il remplace l'icône sur toutes les cartes. Sans logo, l'emoji par défaut est utilisé.</p>
           <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files[0] && handleLogoFile(e.target.files[0])} />
-          {filiales.length === 0 ? (
-            <p className="text-xs text-slate-600">Aucune filiale détectée. Ajoutez des points avec une catégorie pour pouvoir leur associer un logo.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {filiales.map(name => {
-                const rec = iconFor(name);
-                const fs = filialeStyle(name);
-                const busy = iconBusy === name;
-                return (
-                  <div key={name} className="flex items-center gap-3 rounded-xl bg-slate-800/40 border border-slate-800/60 px-3 py-2">
-                    <div className="w-9 h-9 rounded-full border-2 border-white/80 shrink-0 flex items-center justify-center overflow-hidden text-base" style={{ background: rec?.logoUrl ? '#fff' : fs.gradient }}>
-                      {rec?.logoUrl
-                        ? <img src={rec.logoUrl} alt="" className="w-full h-full object-cover" />
-                        : <span>{fs.emoji}</span>}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filiales.map(name => {
+              const rec = iconFor(name);
+              const fs = filialeStyle(name);
+              const busy = iconBusy === name;
+              const count = points.filter(p => filialeKey(p.category || p.name) === filialeKey(name)).length;
+              const hasLogo = !!rec?.logoUrl;
+              const isDrag = dragName === name;
+              return (
+                <div
+                  key={name}
+                  onDragOver={(e) => { e.preventDefault(); setDragName(name); }}
+                  onDragLeave={(e) => { e.preventDefault(); if (dragName === name) setDragName(null); }}
+                  onDrop={(e) => onCardDrop(name, e)}
+                  className={`group relative rounded-2xl border p-3 transition-all ${isDrag ? 'border-green-400 bg-green-500/10 ring-2 ring-green-400/40' : 'border-slate-800/60 bg-slate-800/30 hover:border-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    {/* Live marker preview */}
+                    <div className="shrink-0 flex flex-col items-center" style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,.5))' }}>
+                      <div className="w-11 h-11 rounded-full border-2 border-white flex items-center justify-center overflow-hidden text-lg" style={{ background: hasLogo ? '#fff' : fs.gradient }}>
+                        {hasLogo ? <img src={rec.logoUrl} alt="" className="w-full h-full object-cover" /> : <span>{fs.emoji}</span>}
+                      </div>
+                      <div style={{ width: 0, height: 0, borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: `7px solid ${rec?.color || fs.color}`, marginTop: -1 }} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm text-slate-200 font-medium truncate" title={name}>{name}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <button onClick={() => triggerLogoUpload(name)} disabled={busy} className="text-xs text-green-400 hover:text-green-300 inline-flex items-center gap-1 disabled:opacity-50">
-                          {busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}{rec?.logoUrl ? 'Changer' : 'Ajouter un logo'}
-                        </button>
-                        {rec?.logoUrl && (
-                          <button onClick={() => handleRemoveLogo(name)} disabled={busy} className="text-xs text-slate-500 hover:text-rose-400 inline-flex items-center gap-1 disabled:opacity-50"><X className="w-3 h-3" /> Retirer</button>
-                        )}
-                      </div>
+                      <div className="text-sm text-slate-100 font-semibold truncate" title={name}>{name}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{count} point{count > 1 ? 's' : ''} · {hasLogo ? 'logo personnalisé' : 'emoji par défaut'}</div>
                     </div>
+                    {busy && <Loader2 className="w-4 h-4 text-green-400 animate-spin shrink-0" />}
                   </div>
-                );
-              })}
-            </div>
-          )}
+                  <div className="flex items-center gap-1.5 mt-3">
+                    <button onClick={() => triggerLogoUpload(name)} disabled={busy} className="flex-1 text-xs font-medium text-slate-200 bg-slate-700/50 hover:bg-slate-700 rounded-lg py-1.5 inline-flex items-center justify-center gap-1.5 disabled:opacity-50">
+                      <Upload className="w-3.5 h-3.5" /> {hasLogo ? 'Remplacer' : 'Ajouter un logo'}
+                    </button>
+                    {hasLogo && (
+                      <>
+                        <button onClick={() => openRecrop(name)} disabled={busy} title="Recadrer" className="text-xs text-slate-300 bg-slate-700/50 hover:bg-slate-700 rounded-lg p-1.5 disabled:opacity-50"><Crop className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => handleRemoveLogo(name)} disabled={busy} title="Retirer" className="text-xs text-rose-400/80 bg-slate-700/50 hover:bg-rose-500/15 hover:text-rose-400 rounded-lg p-1.5 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </>
+                    )}
+                  </div>
+                  {isDrag && <div className="absolute inset-0 rounded-2xl flex items-center justify-center pointer-events-none bg-green-500/10 text-green-300 text-xs font-semibold">Déposez l'image</div>}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {loading ? (
@@ -262,6 +310,16 @@ export default function PoleAgriManager() {
 
         <p className="text-center text-xs text-slate-600 mt-10 mb-4">Outil développé par le Service Marketing du Pôle Agricole du Groupe Dubreuil</p>
       </div>
+
+      {cropper && (
+        <LogoCropper
+          src={cropper.src}
+          filialeName={cropper.name}
+          initialColor={cropper.color}
+          onCancel={closeCropper}
+          onSave={handleCropSave}
+        />
+      )}
     </div>
   );
 }
