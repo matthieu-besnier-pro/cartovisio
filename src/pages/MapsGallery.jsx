@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin, Link2 } from 'lucide-react';
-import { syncCV, genShareToken, readFieldContent } from '@/lib/commercialMapUtils';
+import { syncCV, genShareToken, readFieldContent, TILES, parseMapView, fetchDeptGeo } from '@/lib/commercialMapUtils';
 
 export default function MapsGallery() {
   const navigate = useNavigate();
@@ -140,13 +140,13 @@ export default function MapsGallery() {
               return (
                 <div key={m.id} className="group rounded-2xl bg-slate-900/60 border border-slate-800/60 overflow-hidden hover:border-slate-700 transition-all hover:shadow-xl hover:shadow-black/30 flex flex-col">
                   {/* Cover */}
-                  <button onClick={() => navigate(`/map/${m.id}`)} className="relative h-28 overflow-hidden" style={{ background: `linear-gradient(135deg, ${accent}33, ${accent}11)` }}>
-                    <div className="absolute inset-0 opacity-40" style={{ background: `radial-gradient(circle at 30% 50%, ${accent}40, transparent 60%)` }} />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <MapIcon className="w-10 h-10" style={{ color: accent }} />
+                  <button onClick={() => navigate(`/map/${m.id}`)} className="relative h-32 overflow-hidden block w-full">
+                    <MapThumbnail map={m} accent={accent} />
+                    <div className="absolute top-2.5 right-2.5 flex gap-1.5 z-10">
+                      <span className="text-[10px] font-bold text-white bg-black/50 backdrop-blur px-2 py-0.5 rounded-full">{count} communes</span>
                     </div>
-                    <div className="absolute top-2.5 right-2.5 flex gap-1.5">
-                      <span className="text-[10px] font-bold text-white bg-black/40 backdrop-blur px-2 py-0.5 rounded-full">{count} communes</span>
+                    <div className="absolute bottom-2.5 left-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-[10px] font-semibold text-white/90 inline-flex items-center gap-1"><Pencil className="w-3 h-3" /> Ouvrir</span>
                     </div>
                   </button>
                   {/* Body */}
@@ -228,6 +228,97 @@ export default function MapsGallery() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// Lazy, non-interactive mini-map preview rendered only when scrolled into view.
+// Shows the Google base map centered on the saved view with the sectors filled
+// by vendor color (canvas renderer for performance on large maps).
+function MapThumbnail({ map, accent }) {
+  const holderRef = useRef(null);
+  const mapRef = useRef(null);
+  const [inView, setInView] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [empty, setEmpty] = useState(false);
+
+  useEffect(() => {
+    const el = holderRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting) { setInView(true); io.disconnect(); }
+    }, { rootMargin: '150px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!inView || mapRef.current) return;
+    const L = window.L;
+    const el = holderRef.current;
+    if (!L || !el) return;
+
+    const m = L.map(el, {
+      zoomControl: false, attributionControl: false, dragging: false, keyboard: false,
+      scrollWheelZoom: false, doubleClickZoom: false, boxZoom: false, touchZoom: false,
+      tap: false, fadeAnimation: false, zoomAnimation: false, inertia: false, preferCanvas: true,
+    });
+    mapRef.current = m;
+    const t = TILES['google-maps'];
+    L.tileLayer(t.url, { ...t.opts, crossOrigin: false }).addTo(m);
+
+    const mv = parseMapView(map.mapView);
+    if (mv) m.setView([mv.lat, mv.lng], Math.max((mv.zoom || 8) - 1, 3));
+    else m.setView([46.7, 2.4], 4);
+
+    (async () => {
+      try {
+        const overlays = map._overlaysParsed || [];
+        const { cV, vColors } = syncCV(overlays);
+        const codes = Object.keys(cV);
+        if (!codes.length) { setEmpty(true); setReady(true); setTimeout(() => m.invalidateSize(), 50); return; }
+        const geoData = {};
+        const loaded = new Set();
+        const depts = [...new Set(codes.map(c => c.slice(0, 2)))];
+        for (const d of depts) await fetchDeptGeo(d, geoData, loaded);
+        if (!mapRef.current) return; // unmounted mid-fetch
+        const fc = { type: 'FeatureCollection', features: [] };
+        codes.forEach(code => {
+          const f = geoData[code];
+          if (!f) return;
+          fc.features.push({ ...f, properties: { ...(f.properties || {}), _color: vColors[cV[code]] || accent } });
+        });
+        const layer = L.geoJSON(fc, {
+          renderer: L.canvas(),
+          style: (feat) => ({ fillColor: feat.properties._color, fillOpacity: 0.72, color: 'rgba(0,0,0,0.18)', weight: 0.4 }),
+        }).addTo(m);
+        if (!mv) { try { m.fitBounds(layer.getBounds(), { padding: [8, 8] }); } catch { /* noop */ } }
+        setReady(true);
+        setTimeout(() => m.invalidateSize(), 50);
+      } catch {
+        setReady(true);
+      }
+    })();
+
+    return () => { if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inView]);
+
+  return (
+    <div className="absolute inset-0">
+      <div ref={holderRef} className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${accent}33, ${accent}11)` }} />
+      {!ready && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          {inView ? <Loader2 className="w-5 h-5 text-white/70 animate-spin" /> : <MapIcon className="w-9 h-9" style={{ color: accent }} />}
+        </div>
+      )}
+      {ready && empty && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <MapIcon className="w-9 h-9" style={{ color: accent }} />
+        </div>
+      )}
+      {/* Fade + click affordance overlay */}
+      <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(to top, rgba(2,6,23,0.55), rgba(2,6,23,0) 45%)' }} />
     </div>
   );
 }
