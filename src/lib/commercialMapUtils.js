@@ -136,11 +136,13 @@ export const DEPT_SLUGS = {
   '92': 'hauts-de-seine', '93': 'seine-saint-denis', '94': 'val-de-marne', '95': 'val-d-oise',
 };
 
+// Keyless, app-friendly tile providers (CartoDB CDN + Esri). Google/OSM public
+// endpoints throttle high-volume apps (blank/black tiles), so they are not used.
 export const TILES = {
-  'google-maps': { url: 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', opts: { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google' } },
-  'google-satellite': { url: 'https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', opts: { maxZoom: 20, subdomains: ['mt0', 'mt1', 'mt2', 'mt3'], attribution: '© Google' } },
-  'carto-dark': { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 19, attribution: '© CartoDB' } },
-  'carto-light': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 19, attribution: '© CartoDB' } },
+  'carto-voyager': { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', opts: { maxZoom: 20, subdomains: 'abcd', attribution: '© CartoDB © OpenStreetMap' } },
+  'carto-light': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 20, subdomains: 'abcd', attribution: '© CartoDB © OpenStreetMap' } },
+  'carto-dark': { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 20, subdomains: 'abcd', attribution: '© CartoDB © OpenStreetMap' } },
+  'esri-satellite': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opts: { maxZoom: 19, attribution: '© Esri' } },
   'none': null,
 };
 
