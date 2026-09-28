@@ -665,12 +665,25 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
       const departments = [...deptLoadedRef.current];
       const overlaysRaw = serializeOverlays(overlays);
       const markersRaw = serializeMarkers(markersRef.current);
-      await onSave({
-        overlays: serializeOnly ? overlaysRaw : await storeLargeField(overlaysRaw, 'overlays.json'),
-        mapView: serializeMapView(c.lat, c.lng, map.getZoom()),
-        departments: JSON.stringify(departments),
-        markers: serializeOnly ? markersRaw : await storeLargeField(markersRaw, 'markers.json'),
-      });
+      const mapView = serializeMapView(c.lat, c.lng, map.getZoom());
+      const deptsStr = JSON.stringify(departments);
+
+      if (serializeOnly) {
+        // Public edit: backend function handles storage.
+        await onSave({ overlays: overlaysRaw, mapView, departments: deptsStr, markers: markersRaw });
+      } else {
+        // Try storing the data inline in the DB first (writes are free — no
+        // integration credits). Only if the entity field is too large do we
+        // fall back to uploading files (~1 credit each). Keeps small/medium
+        // maps at 0 credit per save while never breaking large ones.
+        try {
+          await onSave({ overlays: overlaysRaw, mapView, departments: deptsStr, markers: markersRaw });
+        } catch {
+          const overlays_ = await storeLargeField(overlaysRaw, 'overlays.json');
+          const markers_ = await storeLargeField(markersRaw, 'markers.json');
+          await onSave({ overlays: overlays_, mapView, departments: deptsStr, markers: markers_ });
+        }
+      }
       toast({ title: 'Carte enregistrée ✓' });
     } catch (e) {
       toast({ title: 'Erreur sauvegarde', description: e.message, variant: 'destructive' });
