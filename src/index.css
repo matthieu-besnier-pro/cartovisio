@@ -90,3 +90,7 @@
     @apply bg-background text-foreground font-body;
   }
 }
+
+/* Leaflet: prevent Tailwind's global img{max-width:100%} from collapsing map
+   tiles to 0 width (black map) if the .leaflet-container class is ever lost. */
+.leaflet-tile { max-width: none !important; }

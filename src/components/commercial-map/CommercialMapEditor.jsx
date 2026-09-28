@@ -851,7 +851,11 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
 
       {/* Main */}
       <div className="flex flex-1 overflow-hidden relative">
-        <div ref={containerRef} className={cn('flex-1 z-[1]', (editMode || isoActive) && 'cursor-crosshair')} style={{ background: '#1a1a2e' }} />
+        {/* NOTE: keep this className constant. Leaflet adds its own classes
+            (leaflet-container…) imperatively; a changing React className would
+            wipe them, breaking tile sizing (max-width) → black map. Cursor is
+            driven via inline style instead. */}
+        <div ref={containerRef} className="flex-1 z-[1]" style={{ background: '#1a1a2e', cursor: (editMode || isoActive) ? 'crosshair' : undefined }} />
 
         {/* Isochrone control panel */}
         {isoActive && (
@@ -994,6 +998,9 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
       {!readOnly && <ChatbotPanel vendors={chatVendors} communeNames={communeNames} onAction={handleChatAction} />}
 
       <style>{`
+        /* Guard: Tailwind's img{max-width:100%} shrinks Leaflet tiles to 0 if the
+           leaflet-container class is ever lost — force tiles to their real size. */
+        .leaflet-tile { max-width: none !important; }
         .cmap-popup .leaflet-popup-content-wrapper { border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.15); }
         .leaflet-control-zoom a { background: rgba(15,23,42,.9)!important; color: #94a3b8!important; border-color: rgba(148,163,184,.08)!important; border-radius: 10px!important; }
         .leaflet-control-zoom a:hover { background: rgba(51,65,85,.95)!important; color: #e2e8f0!important; }
