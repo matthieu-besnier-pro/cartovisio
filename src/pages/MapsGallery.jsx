@@ -264,7 +264,7 @@ function MapThumbnail({ map, accent }) {
       tap: false, fadeAnimation: false, zoomAnimation: false, inertia: false, preferCanvas: true,
     });
     mapRef.current = m;
-    const t = TILES['carto-voyager'];
+    const t = TILES['esri-street'];
     L.tileLayer(t.url, { ...t.opts, crossOrigin: false }).addTo(m);
 
     const mv = parseMapView(map.mapView);

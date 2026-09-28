@@ -74,7 +74,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
   const [editAction, setEditAction] = useState('add');
   const [newVendorName, setNewVendorName] = useState('');
   const [style, setStyle] = useState(DEFAULT_STYLE);
-  const [tile, setTile] = useState('carto-voyager');
+  const [tile, setTile] = useState('esri-street');
   const [tableOpen, setTableOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -415,7 +415,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
     cantonLayerRef.current = L.layerGroup([], { pane: 'cantonPane' }).addTo(map);
     ancCantonLayerRef.current = L.layerGroup([], { pane: 'cantonPane' }).addTo(map);
 
-    const t = TILES[tile] || TILES['carto-voyager'];
+    const t = TILES[tile] || TILES['esri-street'];
     tileLayerRef.current = L.tileLayer(t.url, t.opts).addTo(map);
 
     // Load initial overlays + departments

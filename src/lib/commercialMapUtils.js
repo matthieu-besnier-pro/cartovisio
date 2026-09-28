@@ -136,12 +136,13 @@ export const DEPT_SLUGS = {
   '92': 'hauts-de-seine', '93': 'seine-saint-denis', '94': 'val-de-marne', '95': 'val-d-oise',
 };
 
-// Keyless, app-friendly tile providers (CartoDB CDN + Esri). Google/OSM public
-// endpoints throttle high-volume apps (blank/black tiles), so they are not used.
+// Keyless tile providers (Esri ArcGIS Online). Google/OSM public endpoints
+// throttle high-volume apps (black tiles) and CartoDB now requires an API key
+// ("API KEY REQUIRED" watermark), so Esri is used for every style.
 export const TILES = {
-  'carto-voyager': { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', opts: { maxZoom: 20, subdomains: 'abcd', attribution: '© CartoDB © OpenStreetMap' } },
-  'carto-light': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 20, subdomains: 'abcd', attribution: '© CartoDB © OpenStreetMap' } },
-  'carto-dark': { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', opts: { maxZoom: 20, subdomains: 'abcd', attribution: '© CartoDB © OpenStreetMap' } },
+  'esri-street': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', opts: { maxZoom: 19, attribution: '© Esri' } },
+  'esri-light': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', opts: { maxZoom: 19, maxNativeZoom: 16, attribution: '© Esri' } },
+  'esri-dark': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', opts: { maxZoom: 19, maxNativeZoom: 16, attribution: '© Esri' } },
   'esri-satellite': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', opts: { maxZoom: 19, attribution: '© Esri' } },
   'none': null,
 };
