@@ -871,14 +871,14 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
               ))}
             </div>
 
-            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Durées (min) · max 5</div>
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Durées (min) · max 4</div>
             <div className="flex flex-wrap gap-1.5 mb-3">
               {[5, 10, 15, 20, 30, 45, 60].map(mnt => {
                 const on = isoRanges.includes(mnt);
                 return (
                   <button
                     key={mnt}
-                    onClick={() => setIsoRanges(prev => on ? prev.filter(x => x !== mnt) : (prev.length >= 5 ? prev : [...prev, mnt].sort((a, b) => a - b)))}
+                    onClick={() => setIsoRanges(prev => on ? prev.filter(x => x !== mnt) : (prev.length >= 4 ? prev : [...prev, mnt].sort((a, b) => a - b)))}
                     className={cn('px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors', on ? 'border-green-500 bg-green-500/15 text-green-300' : 'border-slate-700 bg-slate-800/40 text-slate-400 hover:bg-slate-700/40')}
                   >{mnt}</button>
                 );
