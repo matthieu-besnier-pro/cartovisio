@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   MapPin, Pencil, Table2, Download, Settings2, Save, Share2, Eye,
-  Plus, Minus, Search, X, ChevronLeft, Undo2, Redo2, Link2,
+  Plus, Minus, Search, X, ChevronLeft, Undo2, Redo2, Link2, Timer, Car, Bike, Footprints, Loader2, Eraser,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { base44 } from '@/api/base44Client';
@@ -87,6 +87,16 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
   const [globalPoints, setGlobalPoints] = useState([]);
   const globalPointsRef = useRef([]);
   const filialeIconsRef = useRef(new Map());
+  // Isochrones (travel-time areas)
+  const [isoActive, setIsoActive] = useState(false);
+  const [isoProfile, setIsoProfile] = useState('driving-car');
+  const [isoRanges, setIsoRanges] = useState([10, 20, 30]);
+  const [isoBusy, setIsoBusy] = useState(false);
+  const [isoHasResult, setIsoHasResult] = useState(false);
+  const isoActiveRef = useRef(false);
+  const isoProfileRef = useRef('driving-car');
+  const isoRangesRef = useRef([10, 20, 30]);
+  const isoLayerRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -103,6 +113,50 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
   useEffect(() => { newVendorNameRef.current = newVendorName; }, [newVendorName]);
   useEffect(() => { markersRef.current = markers; }, [markers]);
   useEffect(() => { globalPointsRef.current = globalPoints; }, [globalPoints]);
+  useEffect(() => { isoActiveRef.current = isoActive; }, [isoActive]);
+  useEffect(() => { isoProfileRef.current = isoProfile; }, [isoProfile]);
+  useEffect(() => { isoRangesRef.current = isoRanges; }, [isoRanges]);
+
+  const ISO_COLORS = ['#22c55e', '#eab308', '#f97316', '#ef4444', '#a855f7'];
+
+  const clearIsochrones = useCallback(() => {
+    if (isoLayerRef.current) isoLayerRef.current.clearLayers();
+    setIsoHasResult(false);
+  }, []);
+
+  const runIsochrone = useCallback(async (lat, lng) => {
+    const L = window.L; const map = mapRef.current;
+    if (!map || !L) return;
+    setIsoBusy(true);
+    try {
+      const minutes = [...isoRangesRef.current].sort((a, b) => a - b);
+      const res = await base44.functions.invoke('isochrone', { lat, lng, profile: isoProfileRef.current, minutes });
+      const gj = res?.data?.geojson || res?.geojson;
+      if (!gj || !gj.features?.length) throw new Error(res?.data?.error || res?.error || 'Aucune zone renvoyée');
+      if (!isoLayerRef.current) isoLayerRef.current = L.layerGroup().addTo(map);
+      isoLayerRef.current.clearLayers();
+      // Draw largest ranges first so smaller ones sit on top.
+      const feats = [...gj.features].sort((a, b) => (b.properties?.value || 0) - (a.properties?.value || 0));
+      const asc = [...new Set(feats.map(f => f.properties?.value || 0))].sort((a, b) => a - b);
+      feats.forEach((f) => {
+        const val = f.properties?.value || 0;
+        const idx = asc.indexOf(val);
+        const color = ISO_COLORS[idx % ISO_COLORS.length];
+        L.geoJSON(f, { style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.18 } })
+          .bindTooltip(`${Math.round(val / 60)} min`, { sticky: true })
+          .addTo(isoLayerRef.current);
+      });
+      L.circleMarker([lat, lng], { radius: 6, color: '#fff', weight: 2, fillColor: '#0f172a', fillOpacity: 1 })
+        .addTo(isoLayerRef.current);
+      setIsoHasResult(true);
+      try { map.fitBounds(isoLayerRef.current.getBounds(), { padding: [24, 24] }); } catch { /* noop */ }
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.data?.error || e?.message || 'Échec du calcul';
+      toast({ title: 'Isochrone', description: msg, variant: 'destructive' });
+    } finally {
+      setIsoBusy(false);
+    }
+  }, [toast]);
 
   const getLayerStyle = useCallback((vendeur, overlayOpacity, state = 'normal') => {
     const s = styleRef.current;
@@ -325,6 +379,18 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
     map.on('click', onClick);
     return () => map.off('click', onClick);
   }, [handleEditClick, toast]);
+
+  // Isochrone tool: click the map to compute travel-time areas
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const onClick = (e) => {
+      if (!isoActiveRef.current) return;
+      runIsochrone(e.latlng.lat, e.latlng.lng);
+    };
+    map.on('click', onClick);
+    return () => map.off('click', onClick);
+  }, [runIsochrone]);
 
   // Init map
   useEffect(() => {
@@ -747,6 +813,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
           {!readOnly && (
             <IconBtn onClick={() => setEditMode(!editMode)} active={editMode} title="Éditer communes"><Pencil className="w-4 h-4" /></IconBtn>
           )}
+          <IconBtn onClick={() => setIsoActive(a => !a)} active={isoActive} title="Isochrones (temps de trajet)"><Timer className="w-4 h-4" /></IconBtn>
           <IconBtn onClick={() => setTableOpen(!tableOpen)} active={tableOpen} title="Tableau"><Table2 className="w-4 h-4" /></IconBtn>
           <IconBtn onClick={() => setShowExport(true)} title="Exporter"><Download className="w-4 h-4" /></IconBtn>
           {!readOnly && (
@@ -784,7 +851,62 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
 
       {/* Main */}
       <div className="flex flex-1 overflow-hidden relative">
-        <div ref={containerRef} className={cn('flex-1 z-[1]', editMode && 'cursor-crosshair')} style={{ background: '#1a1a2e' }} />
+        <div ref={containerRef} className={cn('flex-1 z-[1]', (editMode || isoActive) && 'cursor-crosshair')} style={{ background: '#1a1a2e' }} />
+
+        {/* Isochrone control panel */}
+        {isoActive && (
+          <div className="absolute top-3 left-3 z-[820] w-64 rounded-2xl bg-slate-900/95 backdrop-blur border border-slate-700/60 shadow-2xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 text-slate-100 font-bold text-sm"><Timer className="w-4 h-4 text-green-400" /> Isochrones</div>
+              <button onClick={() => setIsoActive(false)} className="text-slate-500 hover:text-slate-200 p-1 rounded-lg hover:bg-slate-800"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="text-[11px] text-slate-400 mb-2">Cliquez sur la carte pour placer le point de départ.</div>
+
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Mode</div>
+            <div className="grid grid-cols-3 gap-1.5 mb-3">
+              {[{ k: 'driving-car', I: Car, l: 'Voiture' }, { k: 'cycling-regular', I: Bike, l: 'Vélo' }, { k: 'foot-walking', I: Footprints, l: 'À pied' }].map(({ k, I, l }) => (
+                <button key={k} onClick={() => setIsoProfile(k)} className={cn('flex flex-col items-center gap-1 py-1.5 rounded-lg text-[10px] border transition-colors', isoProfile === k ? 'border-green-500 bg-green-500/15 text-green-300' : 'border-slate-700 bg-slate-800/40 text-slate-400 hover:bg-slate-700/40')}>
+                  <I className="w-4 h-4" /> {l}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Durées (min) · max 5</div>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {[5, 10, 15, 20, 30, 45, 60].map(mnt => {
+                const on = isoRanges.includes(mnt);
+                return (
+                  <button
+                    key={mnt}
+                    onClick={() => setIsoRanges(prev => on ? prev.filter(x => x !== mnt) : (prev.length >= 5 ? prev : [...prev, mnt].sort((a, b) => a - b)))}
+                    className={cn('px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors', on ? 'border-green-500 bg-green-500/15 text-green-300' : 'border-slate-700 bg-slate-800/40 text-slate-400 hover:bg-slate-700/40')}
+                  >{mnt}</button>
+                );
+              })}
+            </div>
+
+            {isoHasResult && (
+              <div className="mb-3">
+                <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Légende</div>
+                <div className="flex flex-col gap-1">
+                  {[...isoRanges].sort((a, b) => a - b).map((mnt, i) => (
+                    <div key={mnt} className="flex items-center gap-2 text-[11px] text-slate-300">
+                      <span className="w-3 h-3 rounded-sm" style={{ background: ISO_COLORS[i % ISO_COLORS.length], opacity: 0.6 }} /> ≤ {mnt} min
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              {isoBusy && <span className="text-[11px] text-green-400 inline-flex items-center gap-1"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Calcul…</span>}
+              <div className="flex-1" />
+              {isoHasResult && (
+                <button onClick={clearIsochrones} disabled={isoBusy} className="text-[11px] text-slate-300 bg-slate-800/60 hover:bg-slate-700 rounded-lg px-2 py-1 inline-flex items-center gap-1 disabled:opacity-50"><Eraser className="w-3.5 h-3.5" /> Effacer</button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Sidebar */}
         {!readOnly && (
