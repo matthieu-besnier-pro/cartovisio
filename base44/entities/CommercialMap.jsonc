@@ -24,6 +24,10 @@
       "type": "string",
       "description": "JSON string of markers array [{id,lat,lng,name}]"
     },
+    "isochrones": {
+      "type": "string",
+      "description": "JSON string (or uploaded file URL) of saved isochrones [{id,lat,lng,label,profile,minutes,geojson}]"
+    },
     "shareToken": {
       "type": "string",
       "description": "Unique public share token"

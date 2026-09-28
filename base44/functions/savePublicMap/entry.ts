@@ -27,6 +27,7 @@ export default async function(req: Request): Promise<Response> {
     if (body.mapView !== undefined) update.mapView = body.mapView;
     if (body.departments !== undefined) update.departments = body.departments;
     if (body.markers !== undefined) update.markers = await uploadJson(base44, body.markers, 'markers.json');
+    if (body.isochrones !== undefined) update.isochrones = await uploadJson(base44, body.isochrones, 'isochrones.json');
 
     await base44.asServiceRole.entities.CommercialMap.update(map.id, update);
     return Response.json({ ok: true });

@@ -95,6 +95,8 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
   const [isoPoints, setIsoPoints] = useState([]);   // [{ id, lat, lng, label }]
   const [isoAddr, setIsoAddr] = useState('');
   const [isoSuggests, setIsoSuggests] = useState([]);
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameVal, setRenameVal] = useState('');
   const [mapReady, setMapReady] = useState(false);
   const isoActiveRef = useRef(false);
   const isoProfileRef = useRef('driving-car');
@@ -124,15 +126,44 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
   const ISO_COLORS = ['#22c55e', '#eab308', '#f97316', '#ef4444', '#a855f7'];
 
   const clearIsochrones = useCallback(() => {
-    Object.values(isoGroupsRef.current).forEach(g => { try { g.remove(); } catch { /* noop */ } });
+    Object.values(isoGroupsRef.current).forEach(e => { try { e.group.remove(); } catch { /* noop */ } });
     isoGroupsRef.current = {};
     setIsoPoints([]);
   }, []);
 
   const removeIsoPoint = useCallback((id) => {
-    const g = isoGroupsRef.current[id];
-    if (g) { try { g.remove(); } catch { /* noop */ } delete isoGroupsRef.current[id]; }
+    const e = isoGroupsRef.current[id];
+    if (e) { try { e.group.remove(); } catch { /* noop */ } delete isoGroupsRef.current[id]; }
     setIsoPoints(prev => prev.filter(p => p.id !== id));
+  }, []);
+
+  // Draw one isochrone (from an already-computed GeoJSON) onto the map.
+  const drawIso = useCallback((pt) => {
+    const L = window.L; const map = mapRef.current;
+    if (!map || !L || !pt?.geojson?.features?.length) return null;
+    const group = L.layerGroup().addTo(map);
+    const feats = [...pt.geojson.features].sort((a, b) => (b.properties?.value || 0) - (a.properties?.value || 0));
+    const asc = [...new Set(feats.map(f => f.properties?.value || 0))].sort((a, b) => a - b);
+    feats.forEach((f) => {
+      const val = f.properties?.value || 0;
+      const idx = asc.indexOf(val);
+      const color = ISO_COLORS[idx % ISO_COLORS.length];
+      L.geoJSON(f, { style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.18 } })
+        .bindTooltip(`${Math.round(val / 60)} min`, { sticky: true })
+        .addTo(group);
+    });
+    const marker = L.circleMarker([pt.lat, pt.lng], { radius: 6, color: '#fff', weight: 2, fillColor: '#0f172a', fillOpacity: 1 })
+      .bindTooltip(pt.label || 'Départ');
+    marker.addTo(group);
+    isoGroupsRef.current[pt.id] = { group, marker };
+    return group;
+  }, []);
+
+  // Rename a saved isochrone start point (updates the map tooltip too).
+  const renameIsoPoint = useCallback((id, label) => {
+    const e = isoGroupsRef.current[id];
+    if (e?.marker) { try { e.marker.setTooltipContent(label || 'Départ'); } catch { /* noop */ } }
+    setIsoPoints(prev => prev.map(p => p.id === id ? { ...p, label } : p));
   }, []);
 
   // Compute an isochrone for one start point and add it (keeping existing ones).
@@ -141,36 +172,24 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
     if (!map || !L) return;
     const id = 'iso_' + (++isoSeqRef.current);
     const name = label || `Point ${isoSeqRef.current}`;
+    const profile = isoProfileRef.current;
+    const minutes = [...isoRangesRef.current].sort((a, b) => a - b);
     setIsoBusy(true);
     try {
-      const minutes = [...isoRangesRef.current].sort((a, b) => a - b);
-      const res = await base44.functions.invoke('isochrone', { lat, lng, profile: isoProfileRef.current, minutes });
+      const res = await base44.functions.invoke('isochrone', { lat, lng, profile, minutes });
       const gj = res?.data?.geojson || res?.geojson;
       if (!gj || !gj.features?.length) throw new Error(res?.data?.error || res?.error || 'Aucune zone renvoyée');
-      const group = L.layerGroup().addTo(map);
-      // Draw largest ranges first so smaller ones sit on top.
-      const feats = [...gj.features].sort((a, b) => (b.properties?.value || 0) - (a.properties?.value || 0));
-      const asc = [...new Set(feats.map(f => f.properties?.value || 0))].sort((a, b) => a - b);
-      feats.forEach((f) => {
-        const val = f.properties?.value || 0;
-        const idx = asc.indexOf(val);
-        const color = ISO_COLORS[idx % ISO_COLORS.length];
-        L.geoJSON(f, { style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.18 } })
-          .bindTooltip(`${name} · ${Math.round(val / 60)} min`, { sticky: true })
-          .addTo(group);
-      });
-      L.circleMarker([lat, lng], { radius: 6, color: '#fff', weight: 2, fillColor: '#0f172a', fillOpacity: 1 })
-        .bindTooltip(name).addTo(group);
-      isoGroupsRef.current[id] = group;
-      setIsoPoints(prev => [...prev, { id, lat, lng, label: name }]);
-      try { map.fitBounds(group.getBounds(), { padding: [24, 24] }); } catch { /* noop */ }
+      const pt = { id, lat, lng, label: name, profile, minutes, geojson: gj };
+      const group = drawIso(pt);
+      setIsoPoints(prev => [...prev, pt]);
+      try { if (group) map.fitBounds(group.getBounds(), { padding: [24, 24] }); } catch { /* noop */ }
     } catch (e) {
       const msg = e?.response?.data?.error || e?.data?.error || e?.message || 'Échec du calcul';
       toast({ title: 'Isochrone', description: msg, variant: 'destructive' });
     } finally {
       setIsoBusy(false);
     }
-  }, [toast]);
+  }, [toast, drawIso]);
 
   // Address search via the French national address base (BAN) — free, no key, CORS-ok.
   const geocodeAddr = useCallback(async (q) => {
@@ -468,6 +487,17 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
       const mks = parseMarkers(await readFieldContent(record?.markers));
       markersRef.current = mks;
       setMarkers(mks);
+      // Restore saved isochrones (drawn from stored GeoJSON, no recompute)
+      try {
+        const isoRaw = await readFieldContent(record?.isochrones);
+        const isos = isoRaw ? JSON.parse(isoRaw) : [];
+        if (Array.isArray(isos) && isos.length) {
+          isos.forEach(pt => drawIso(pt));
+          const maxSeq = isos.reduce((m, p) => Math.max(m, parseInt(String(p.id).replace(/\D/g, ''), 10) || 0), 0);
+          isoSeqRef.current = Math.max(isoSeqRef.current, maxSeq);
+          setIsoPoints(isos);
+        }
+      } catch { /* ignore malformed isochrones */ }
       const depts = parseDepartments(record?.departments);
       if (depts.length) {
         setLoading(true);
@@ -665,23 +695,25 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
       const departments = [...deptLoadedRef.current];
       const overlaysRaw = serializeOverlays(overlays);
       const markersRaw = serializeMarkers(markersRef.current);
+      const isoRaw = JSON.stringify(isoPoints);
       const mapView = serializeMapView(c.lat, c.lng, map.getZoom());
       const deptsStr = JSON.stringify(departments);
 
       if (serializeOnly) {
         // Public edit: backend function handles storage.
-        await onSave({ overlays: overlaysRaw, mapView, departments: deptsStr, markers: markersRaw });
+        await onSave({ overlays: overlaysRaw, mapView, departments: deptsStr, markers: markersRaw, isochrones: isoRaw });
       } else {
         // Try storing the data inline in the DB first (writes are free — no
         // integration credits). Only if the entity field is too large do we
         // fall back to uploading files (~1 credit each). Keeps small/medium
         // maps at 0 credit per save while never breaking large ones.
         try {
-          await onSave({ overlays: overlaysRaw, mapView, departments: deptsStr, markers: markersRaw });
+          await onSave({ overlays: overlaysRaw, mapView, departments: deptsStr, markers: markersRaw, isochrones: isoRaw });
         } catch {
           const overlays_ = await storeLargeField(overlaysRaw, 'overlays.json');
           const markers_ = await storeLargeField(markersRaw, 'markers.json');
-          await onSave({ overlays: overlays_, mapView, departments: deptsStr, markers: markers_ });
+          const iso_ = await storeLargeField(isoRaw, 'isochrones.json');
+          await onSave({ overlays: overlays_, mapView, departments: deptsStr, markers: markers_, isochrones: iso_ });
         }
       }
       toast({ title: 'Carte enregistrée ✓' });
@@ -976,13 +1008,31 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
                 </div>
                 <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Points de départ ({isoPoints.length})</div>
                 <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
-                  {isoPoints.map(p => (
-                    <div key={p.id} className="flex items-center gap-2 text-[11px] text-slate-300 bg-slate-800/40 rounded-lg px-2 py-1">
-                      <MapPin className="w-3 h-3 text-green-400 shrink-0" />
-                      <span className="flex-1 truncate" title={p.label}>{p.label}</span>
-                      <button onClick={() => removeIsoPoint(p.id)} className="text-slate-500 hover:text-rose-400 shrink-0"><X className="w-3.5 h-3.5" /></button>
-                    </div>
-                  ))}
+                  {isoPoints.map(p => {
+                    const editing = renamingId === p.id;
+                    const commit = () => { const v = renameVal.trim(); if (v) renameIsoPoint(p.id, v); setRenamingId(null); };
+                    return (
+                      <div key={p.id} className="flex items-center gap-2 text-[11px] text-slate-300 bg-slate-800/40 rounded-lg px-2 py-1">
+                        <MapPin className="w-3 h-3 text-green-400 shrink-0" />
+                        {editing ? (
+                          <input
+                            autoFocus
+                            value={renameVal}
+                            onChange={(e) => setRenameVal(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setRenamingId(null); }}
+                            onBlur={commit}
+                            className="flex-1 bg-slate-900 border border-slate-600 rounded px-1.5 py-0.5 text-[11px] text-slate-100 outline-none min-w-0"
+                          />
+                        ) : (
+                          <span className="flex-1 truncate cursor-text" title="Cliquer pour renommer" onClick={() => { setRenamingId(p.id); setRenameVal(p.label); }}>{p.label}</span>
+                        )}
+                        {!editing && (
+                          <button onClick={() => { setRenamingId(p.id); setRenameVal(p.label); }} className="text-slate-500 hover:text-slate-200 shrink-0" title="Renommer"><Pencil className="w-3 h-3" /></button>
+                        )}
+                        <button onClick={() => removeIsoPoint(p.id)} className="text-slate-500 hover:text-rose-400 shrink-0" title="Supprimer"><X className="w-3.5 h-3.5" /></button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
