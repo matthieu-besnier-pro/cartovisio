@@ -501,7 +501,9 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
       const depts = parseDepartments(record?.departments);
       if (depts.length) {
         setLoading(true);
-        for (const d of depts) await fetchDeptGeo(d, geoDataRef.current, deptLoadedRef.current);
+        // Fetch all departments' commune geometry in parallel (was sequential,
+        // which made large multi-department maps take tens of seconds to load).
+        await Promise.all(depts.map(d => fetchDeptGeo(d, geoDataRef.current, deptLoadedRef.current)));
         setLoading(false);
       }
       renderAll();
@@ -564,7 +566,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
     if (!Object.keys(cV).length) { toast({ title: 'Importez des données d\'abord', variant: 'destructive' }); setLayers(l => ({ ...l, departements: false })); return; }
     const depts = [...new Set(Object.keys(cV).map(c => c.slice(0, 2)))];
     (async () => {
-      for (const d of depts) await fetchDeptBoundary(d, deptGeoDataRef.current, deptGeoLoadedRef.current);
+      await Promise.all(depts.map(d => fetchDeptBoundary(d, deptGeoDataRef.current, deptGeoLoadedRef.current)));
       deptLayerRef.current.clearLayers();
       depts.forEach(d => {
         const feat = deptGeoDataRef.current[d];
@@ -586,7 +588,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
         ? [...new Set(Object.keys(cV).map(c => c.slice(0, 2)))]
         : [...deptLoadedRef.current];
       if (!depts.length) { toast({ title: 'Importez ou chargez des données d\'abord', variant: 'destructive' }); setLayers(l => ({ ...l, cantons: false, ancCantons: false })); return; }
-      for (const d of depts) await fetchCantons(d, cantonGeoDataRef.current, cantonGeoLoadedRef.current);
+      await Promise.all(depts.map(d => fetchCantons(d, cantonGeoDataRef.current, cantonGeoLoadedRef.current)));
       layerRef.current.clearLayers();
       depts.forEach(d => {
         const gj = cantonGeoDataRef.current[d];
@@ -644,7 +646,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
       const { name, cV, departments } = res;
       const newMarkers = res.markers || [];
       if (departments.length) onLog(`Chargement de ${departments.length} département(s)...`, '');
-      for (const d of departments) await fetchDeptGeo(d, geoDataRef.current, deptLoadedRef.current);
+      await Promise.all(departments.map(d => fetchDeptGeo(d, geoDataRef.current, deptLoadedRef.current)));
       if (newMarkers.length) {
         setMarkers(prev => {
           const next = [...prev, ...newMarkers];
