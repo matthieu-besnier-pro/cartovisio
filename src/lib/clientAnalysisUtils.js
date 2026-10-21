@@ -121,7 +121,8 @@ export async function parseClientFile(file, statut, onLog) {
       caTotal = parts.length ? parts.reduce((a, b) => a + b, 0) : null;
     }
     out.push({
-      statut: statut || '',
+      // A CA export carries no churn status — never infer one for it.
+      statut: hasCA ? '' : (statut || ''),
       idCompte: String(get('idCompte') || '').trim(),
       societe,
       nom: String(get('nom') || '').trim(),

@@ -117,11 +117,17 @@ export default function ClientAnalysis({ publicMode = false, editable = false })
     if (!file) return;
     setImporting(true); setLog([]);
     try {
-      // Statut guessed from the filename (only meaningful for the
-      // portefeuille format; the CA export has no statut).
+      // Statut guessed from the filename — only meaningful for the
+      // portefeuille format. A CA export never receives a statut
+      // (parseClientFile ignores it), even if its name contains a year.
       const n = file.name.toLowerCase();
-      const statut = n.includes('actif') ? 'ACTIF' : n.includes('2024') ? 'PERDU_2024' : n.includes('2025') ? 'PERDU_2025' : '';
+      const churn = /arret|perdu|resilie/.test(n);
+      const statut = n.includes('actif') ? 'ACTIF'
+        : (churn || /^\d{4}\./.test(n)) && n.includes('2024') ? 'PERDU_2024'
+          : (churn || /^\d{4}\./.test(n)) && n.includes('2025') ? 'PERDU_2025'
+            : '';
       const rows = await parseClientFile(file, statut, pushLog);
+      if (rows[0]?.statut) pushLog(`🏷️ Statut appliqué : ${statutLabel(rows[0].statut)}`, 'ok');
       if (!rows.length) throw new Error('Aucun client exploitable');
       const geo = (await geocodeClients(rows, pushLog)).map(c => ({ ...c, mapId }));
       pushLog(`💾 Enregistrement de ${geo.length} clients…`);
