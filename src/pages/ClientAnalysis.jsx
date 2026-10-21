@@ -25,6 +25,7 @@ export default function ClientAnalysis() {
   const mapRef = useRef(null);
   const layerRef = useRef(null);
   const didFitRef = useRef(false);
+  const markersRef = useRef({});
 
   const [record, setRecord] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -178,13 +179,15 @@ export default function ClientAnalysis() {
     const L = window.L; const map = mapRef.current; const layer = layerRef.current;
     if (!L || !map || !layer) return;
     layer.clearLayers();
+    markersRef.current = {};
     const pts = filtered.filter(c => Number.isFinite(c.lat) && Number.isFinite(c.lng));
     pts.forEach(c => {
       const color = pointColor(c, colorMode, ctx);
-      L.circleMarker([c.lat, c.lng], {
+      const mk = L.circleMarker([c.lat, c.lng], {
         radius: pointRadius(c, colorMode, ctx),
         color: '#0f172a', weight: 0.8, fillColor: color, fillOpacity: 0.85,
       }).bindPopup(popupHtml(c)).addTo(layer);
+      markersRef.current[c.id] = mk;
     });
     // Honour a saved view; otherwise frame the data once on first draw.
     if (!didFitRef.current && pts.length) {
@@ -215,6 +218,21 @@ export default function ClientAnalysis() {
   };
 
   const geoOk = filtered.filter(c => Number.isFinite(c.lat)).length;
+
+  // Zoom to a client and open its popup from the list.
+  const focusClient = (c) => {
+    const map = mapRef.current;
+    if (!map || !Number.isFinite(c.lat)) return;
+    map.setView([c.lat, c.lng], Math.max(map.getZoom(), 13));
+    markersRef.current[c.id]?.openPopup();
+  };
+
+  // Clients sorted by the amount currently driving the colours (CA by default).
+  const sortKey = ['ca2024', 'ca2025', 'ca2026', 'caTotal', 'nbPassages'].includes(colorMode) ? colorMode : 'caTotal';
+  const ranked = useMemo(
+    () => [...filtered].sort((a, b) => (b[sortKey] ?? -Infinity) - (a[sortKey] ?? -Infinity)),
+    [filtered, sortKey]
+  );
 
   return (
     <div className="h-screen flex flex-col bg-slate-950 text-slate-100" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -320,6 +338,40 @@ export default function ClientAnalysis() {
           {/* Stats */}
           {clients.length > 0 && <StatsPanel stats={stats} hasCA={hasCA} />}
 
+          {/* Client list — nom + montant, cliquable */}
+          {ranked.length > 0 && (
+            <div className="p-3 border-b border-slate-800/60">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Clients ({ranked.length})</span>
+                <span className="text-[9px] text-slate-600">tri : {COLOR_MODES.find(m => m.key === sortKey)?.label || 'CA'}</span>
+              </div>
+              <div className="max-h-72 overflow-y-auto space-y-0.5 pr-1">
+                {ranked.slice(0, 300).map(c => {
+                  const v = c[sortKey];
+                  const contact = [c.prenom, c.nom].filter(Boolean).join(' ');
+                  return (
+                    <button key={c.id} onClick={() => focusClient(c)}
+                      className="w-full text-left rounded-lg px-2 py-1.5 hover:bg-slate-800/60 transition-colors group">
+                      <div className="flex items-baseline gap-2">
+                        <span className="flex-1 truncate text-[11px] text-slate-200 group-hover:text-white" title={c.societe}>{c.societe}</span>
+                        <span className="text-[11px] font-semibold text-indigo-300 shrink-0">
+                          {sortKey === 'nbPassages' ? (Number.isFinite(v) ? v : '—') : fmtEuro(v)}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline gap-2 text-[9px] text-slate-500">
+                        <span className="flex-1 truncate">{contact || c.ville}</span>
+                        {contact && <span className="truncate">{c.ville}</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+                {ranked.length > 300 && (
+                  <div className="text-[9px] text-slate-600 text-center pt-1">… {ranked.length - 300} autres (affinez les filtres)</div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* AI */}
           {clients.length > 0 && (
             <div className="p-3 border-t border-slate-800/60">
@@ -331,7 +383,7 @@ export default function ClientAnalysis() {
               <Button size="sm" onClick={runAI} disabled={aiBusy} className="w-full gap-1.5 text-xs bg-gradient-to-r from-violet-500 to-fuchsia-600">
                 {aiBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />} Analyser le portefeuille
               </Button>
-              <p className="text-[9px] text-slate-600 mt-1.5 leading-snug">Seules des statistiques agrégées sont envoyées à l'IA — aucune donnée nominative.</p>
+              <p className="text-[9px] text-slate-600 mt-1.5 leading-snug">Statistiques agrégées + comptes à enjeu (nom, ville, CA). Aucun email, téléphone ni SIRET n'est transmis.</p>
               {aiText && <Markdownish text={aiText} />}
             </div>
           )}
@@ -499,9 +551,13 @@ function esc(s) { return String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', 
 function popupHtml(c) {
   const ev = caEvolution(c);
   const row = (k, v) => v ? `<div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#64748b">${k}</span><span style="font-weight:600;color:#0f172a">${v}</span></div>` : '';
-  return `<div style="font-family:Inter,system-ui,sans-serif;min-width:190px;font-size:11px">
+  const contact = [c.prenom, c.nom].filter(Boolean).join(' ');
+  return `<div style="font-family:Inter,system-ui,sans-serif;min-width:210px;font-size:11px">
     <div style="font-weight:700;font-size:12.5px;color:#0f172a;margin-bottom:2px">${esc(c.societe)}</div>
-    <div style="color:#64748b;margin-bottom:6px">${esc([c.codePostal, c.ville].filter(Boolean).join(' '))}</div>
+    ${contact ? `<div style="color:#334155;margin-bottom:1px">${esc(contact)}</div>` : ''}
+    <div style="color:#64748b;margin-bottom:6px">${esc([c.adresse, c.codePostal, c.ville].filter(Boolean).join(' · '))}</div>
+    ${c.telephone ? `<div style="margin-bottom:2px"><a href="tel:${esc(c.telephone)}" style="color:#4f46e5;text-decoration:none">${esc(c.telephone)}</a></div>` : ''}
+    ${c.email ? `<div style="margin-bottom:6px"><a href="mailto:${esc(c.email)}" style="color:#4f46e5;text-decoration:none">${esc(c.email)}</a></div>` : ''}
     ${row('CA 2024', Number.isFinite(c.ca2024) ? fmtEuro(c.ca2024) : '')}
     ${row('CA 2025', Number.isFinite(c.ca2025) ? fmtEuro(c.ca2025) : '')}
     ${row('CA 2026', Number.isFinite(c.ca2026) ? fmtEuro(c.ca2026) : '')}

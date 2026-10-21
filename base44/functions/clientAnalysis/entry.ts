@@ -2,9 +2,9 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.44';
 
 // AI analysis of the geolocated customer base.
 //
-// PRIVACY: the frontend sends ONLY aggregates (counts per département, per
-// point de vente, per activity, average affiliation rate…). No names, emails,
-// phone numbers or SIRET ever leave the app.
+// The frontend sends aggregates plus a short list of named accounts (top
+// customers and biggest revenue drops) so the recommendations can target real
+// accounts. Contact details (email, phone, SIRET) are never sent.
 
 export default async function (req: Request): Promise<Response> {
   try {
@@ -33,15 +33,18 @@ Rédige une analyse en français, concise et actionnable, structurée en markdow
 2-3 phrases : volume du portefeuille, répartition actifs/perdus, taux de perte global.
 
 ## Zones à risque
-Les départements / points de vente où la perte de clients est la plus forte (cite les chiffres et le taux de perte en %). Sois précis.
+Les départements / points de vente où le CA recule le plus ou la perte de clients est la plus forte (cite les chiffres et les % d'évolution). Sois précis.
+
+## Comptes à relancer en priorité
+À partir de "plusFortesBaisses" : cite les clients NOMMÉMENT avec leur ville, leur CA 2024 → 2026 et la perte en euros. Classe-les par enjeu financier.
 
 ## Points forts
-Les zones et activités où le portefeuille est solide ou le taux d'affiliation élevé.
+Les zones, activités et gros comptes ("topClients") où le portefeuille est solide ou en croissance.
 
 ## Recommandations
 3 à 5 actions concrètes et priorisées (reconquête, prospection, animation de PDV), chacune en une ligne, ancrée sur les chiffres ci-dessus.
 
-Règles : appuie CHAQUE affirmation sur les chiffres fournis, n'invente aucune donnée absente, ne cite jamais de client nommément (tu n'en as pas). Pas de préambule, commence directement par "## Vue d'ensemble".`;
+Règles : appuie CHAQUE affirmation sur les chiffres fournis, n'invente aucune donnée absente, ne cite que les clients présents dans les données. Formate les montants en euros avec séparateur de milliers. Pas de préambule, commence directement par "## Vue d'ensemble".`;
 
     const result = await base44.asServiceRole.integrations.Core.InvokeLLM({ prompt });
     const text = typeof result === 'string' ? result : (result?.text || result?.output || JSON.stringify(result));

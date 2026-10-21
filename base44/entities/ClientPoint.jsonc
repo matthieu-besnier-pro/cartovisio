@@ -15,6 +15,19 @@
       "description": "id_compte_rcu"
     },
     "societe": {
+      "type": "string",
+      "description": "raison_sociale"
+    },
+    "nom": {
+      "type": "string"
+    },
+    "prenom": {
+      "type": "string"
+    },
+    "telephone": {
+      "type": "string"
+    },
+    "email": {
       "type": "string"
     },
     "siret": {

@@ -25,6 +25,10 @@ const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0
 const FIELD_ALIASES = {
   idCompte: ['idcomptercu', 'idclientrcu', 'idcompte', 'idclient'],
   societe: ['societe', 'raisonsociale', 'client', 'nom'],
+  nom: ['nom', 'nomcontact', 'nomclient'],
+  prenom: ['prenom', 'prenomcontact'],
+  telephone: ['telephone', 'tel', 'tel1', 'telephone1', 'mobile', 'portable'],
+  email: ['email', 'email1', 'mail', 'courriel'],
   siret: ['siret'],
   identiteJuridique: ['identitejuridique'],
   naf: ['naflibelle', 'naf', 'activite', 'libellenaf'],
@@ -120,6 +124,10 @@ export async function parseClientFile(file, statut, onLog) {
       statut: statut || '',
       idCompte: String(get('idCompte') || '').trim(),
       societe,
+      nom: String(get('nom') || '').trim(),
+      prenom: String(get('prenom') || '').trim(),
+      telephone: String(get('telephone') || '').trim(),
+      email: String(get('email') || '').trim(),
       siret: String(get('siret') || '').trim(),
       identiteJuridique: String(get('identiteJuridique') || '').trim(),
       naf: String(get('naf') || '').trim(),
@@ -398,6 +406,26 @@ export function buildStats(clients) {
         ca2024: r0(v.ca2024), ca2025: r0(v.ca2025), ca2026: r0(v.ca2026),
         evolutionPct: v.ca2024 > 0 ? +(((v.ca2026 - v.ca2024) / v.ca2024) * 100).toFixed(1) : null,
         perdus: v.PERDU_2024 + v.PERDU_2025,
+      })),
+    // Named clients — this stays inside the (authenticated) app and is sent to
+    // the analysis so recommendations can target real accounts.
+    topClients: [...clients]
+      .filter(c => Number.isFinite(c.caTotal))
+      .sort((a, b) => b.caTotal - a.caTotal).slice(0, 15)
+      .map(c => ({
+        societe: c.societe, ville: c.ville,
+        ca2024: r0(c.ca2024), ca2026: r0(c.ca2026),
+        evolutionPct: Number.isFinite(c.ca2024) && c.ca2024 > 0 && Number.isFinite(c.ca2026)
+          ? +(((c.ca2026 - c.ca2024) / c.ca2024) * 100).toFixed(0) : null,
+      })),
+    plusFortesBaisses: [...clients]
+      .filter(c => Number.isFinite(c.ca2024) && Number.isFinite(c.ca2026) && c.ca2026 < c.ca2024)
+      .sort((a, b) => (a.ca2026 - a.ca2024) - (b.ca2026 - b.ca2024)).slice(0, 15)
+      .map(c => ({
+        societe: c.societe, ville: c.ville,
+        ca2024: r0(c.ca2024), ca2026: r0(c.ca2026),
+        perteEuros: r0(c.ca2024 - c.ca2026),
+        dernierAchat: c.dernierAchat || null,
       })),
     topFiliales: Object.entries(byFiliale).sort((a, b) => b[1] - a[1]).slice(0, 8),
     topNaf: Object.entries(byNaf).sort((a, b) => b[1] - a[1]).slice(0, 10),
