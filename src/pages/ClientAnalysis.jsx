@@ -174,17 +174,24 @@ export default function ClientAnalysis({ publicMode = false, editable = false })
     });
   }, [clients, statutFilter, deptFilter, query]);
 
-  const ctx = useMemo(() => ({
-    maxByMode: {
-      ca2024: percentileMax(clients.map(c => c.ca2024)),
-      ca2025: percentileMax(clients.map(c => c.ca2025)),
-      ca2026: percentileMax(clients.map(c => c.ca2026)),
-      caTotal: percentileMax(clients.map(c => c.caTotal)),
-      nbPassages: percentileMax(clients.map(c => c.nbPassages)),
-    },
-    filialeColors: categoryColors(clients.map(c => c.filiale)),
-    nafColors: categoryColors(clients.map(c => c.naf)),
-  }), [clients]);
+  const ctx = useMemo(() => {
+    // One shared scale for the three CA years, so switching year shows the
+    // real rise/fall instead of re-normalising each year on its own max.
+    const caShared = percentileMax([
+      ...clients.map(c => c.ca2024),
+      ...clients.map(c => c.ca2025),
+      ...clients.map(c => c.ca2026),
+    ]);
+    return {
+      maxByMode: {
+        ca2024: caShared, ca2025: caShared, ca2026: caShared,
+        caTotal: percentileMax(clients.map(c => c.caTotal)),
+        nbPassages: percentileMax(clients.map(c => c.nbPassages)),
+      },
+      filialeColors: categoryColors(clients.map(c => c.filiale)),
+      nafColors: categoryColors(clients.map(c => c.naf)),
+    };
+  }, [clients]);
 
   const stats = useMemo(() => buildStats(filtered), [filtered]);
   const hasCA = useMemo(() => clients.some(c => Number.isFinite(c.caTotal) || Number.isFinite(c.ca2026)), [clients]);
@@ -553,15 +560,20 @@ function MapLegend({ mode, ctx }) {
       </LegendBox>
     );
   }
+  const max = ctx.maxByMode?.[mode];
+  const isCA = ['ca2024', 'ca2025', 'ca2026', 'caTotal'].includes(mode);
   const labels = mode === 'evolution' ? ['-50 %', 'stable', '+50 %']
     : mode === 'recence' ? ['> 1 an', '6 mois', 'récent']
-      : ['faible', '', 'élevé'];
+      : isCA && max ? ['0', '', `${fmtEuro(max)}+`]
+        : mode === 'nbPassages' && max ? ['0', '', `${Math.round(max)}+`]
+          : ['faible', '', 'élevé'];
   return (
     <LegendBox title={m.label}>
       <div className="h-2.5 w-40 rounded" style={{ background: 'linear-gradient(90deg, rgb(239,68,68), rgb(245,158,11), rgb(34,197,94))' }} />
       <div className="flex justify-between w-40 text-[9px] text-slate-500 mt-0.5">
         {labels.map((l, i) => <span key={i}>{l}</span>)}
       </div>
+      {isCA && <div className="text-[8px] text-slate-600 mt-1 w-40 leading-tight">Échelle log, commune aux 3 années</div>}
     </LegendBox>
   );
 }

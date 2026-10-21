@@ -358,11 +358,8 @@ export function pointColor(c, mode, ctx) {
     if (!Number.isFinite(c.tauxAffiliation)) return '#64748b';
     return gradientColor(c.tauxAffiliation / 100);
   }
-  const v = c[mode];
-  if (!Number.isFinite(v)) return '#64748b';
-  const max = ctx.maxByMode?.[mode];
-  if (!max) return '#64748b';
-  return gradientColor(Math.min(1, v / max));
+  const ratio = scaleRatio(c[mode], ctx.maxByMode?.[mode]);
+  return ratio === null ? '#64748b' : gradientColor(ratio);
 }
 
 // Robust max (95th percentile) for a numeric field.
@@ -372,13 +369,21 @@ export function percentileMax(values, p = 0.95) {
   return v[Math.min(v.length - 1, Math.floor(v.length * p))] || v[v.length - 1];
 }
 
+// Revenue is heavily skewed (median ≈ 450 €, p95 ≈ 7 500 €): on a linear scale
+// ~70 % of customers collapse into the bottom colour. A log scale spreads them
+// out. The max is shared across the CA years so switching year actually shows
+// the rise or fall instead of re-normalising each year independently.
+export function scaleRatio(v, max) {
+  if (!Number.isFinite(v) || !max || max <= 0) return null;
+  return Math.min(1, Math.log1p(Math.max(0, v)) / Math.log1p(max));
+}
+
 // Marker radius scaled by CA (so big customers stand out), 4–14 px.
 export function pointRadius(c, mode, ctx) {
   const numeric = ['ca2024', 'ca2025', 'ca2026', 'caTotal', 'nbPassages'].includes(mode);
-  const v = numeric ? c[mode] : c.caTotal;
-  const max = ctx.maxByMode?.[numeric ? mode : 'caTotal'];
-  if (!Number.isFinite(v) || !max) return 5;
-  return 4 + Math.sqrt(Math.min(1, v / max)) * 10;
+  const key = numeric ? mode : 'caTotal';
+  const ratio = scaleRatio(c[key], ctx.maxByMode?.[key]);
+  return ratio === null ? 5 : 4 + ratio * 10;
 }
 
 export const fmtEuro = (n) =>
