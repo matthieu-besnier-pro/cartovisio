@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useToast } from '@/components/ui/use-toast';
 import { ChevronLeft, Plus, Trash2, Loader2, BarChart3, Users, Euro } from 'lucide-react';
 import { fmtEuro } from '@/lib/clientAnalysisUtils';
+import { genShareToken } from '@/lib/commercialMapUtils';
 
 export default function ClientAnalysisList() {
   const navigate = useNavigate();
@@ -44,6 +45,7 @@ export default function ClientAnalysisList() {
     try {
       const rec = await base44.entities.ClientMap.create({
         title: title.trim(), description: desc.trim(), colorMode: 'caTotal',
+        shareToken: genShareToken(), isPublic: true,
       });
       setCreateOpen(false); setTitle(''); setDesc('');
       navigate(`/analyse-clients/${rec.id}`);

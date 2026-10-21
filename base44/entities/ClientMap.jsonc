@@ -24,6 +24,14 @@
       "type": "string",
       "description": "Dernière analyse IA générée (markdown), conservée avec la carte"
     },
+    "shareToken": {
+      "type": "string",
+      "description": "Jeton de partage public unique"
+    },
+    "isPublic": {
+      "type": "boolean",
+      "default": true
+    },
     "accentColor": {
       "type": "string",
       "default": "#6366f1"

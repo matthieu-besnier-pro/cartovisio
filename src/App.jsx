@@ -49,6 +49,8 @@ const AuthenticatedApp = () => {
       <Route path="/pole-agri" element={<PoleAgriManager />} />
       <Route path="/analyse-clients" element={<ClientAnalysisList />} />
       <Route path="/analyse-clients/:id" element={<ClientAnalysis />} />
+      <Route path="/analyse-publique/:token" element={<ClientAnalysis publicMode />} />
+      <Route path="/analyse-publique/:token/edit" element={<ClientAnalysis publicMode editable />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

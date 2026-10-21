@@ -6,9 +6,9 @@ import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import {
   ChevronLeft, Upload, Trash2, Loader2, Sparkles, TrendingUp, TrendingDown,
-  Users, Search, X, BarChart3, Save,
+  Users, Search, X, BarChart3, Save, Share2, Link2,
 } from 'lucide-react';
-import { TILES } from '@/lib/commercialMapUtils';
+import { TILES, genShareToken } from '@/lib/commercialMapUtils';
 import {
   parseClientFile, geocodeClients, buildStats, COLOR_MODES, pointColor, pointRadius,
   percentileMax, categoryColors, caEvolution, fmtEuro, statutLabel, statutColor, STATUT_LIST,
@@ -16,10 +16,14 @@ import {
 
 const CHUNK = 200;
 
-export default function ClientAnalysis() {
+// Modes: internal (default, full powers), public read-only, public editable.
+export default function ClientAnalysis({ publicMode = false, editable = false }) {
   const navigate = useNavigate();
-  const { id } = useParams();
+  const { id: routeId, token } = useParams();
   const { toast } = useToast();
+  const [mapId, setMapId] = useState(publicMode ? null : routeId);
+  const canEdit = !publicMode || editable;   // may change + save display settings
+  const canManage = !publicMode;             // may import / delete data
   const fileRef = useRef(null);
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -47,10 +51,25 @@ export default function ClientAnalysis() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [rec, list] = await Promise.all([
-        base44.entities.ClientMap.get(id),
-        base44.entities.ClientPoint.filter({ mapId: id }, '-created_date', 5000),
-      ]);
+      // Public links resolve the analysis through its share token.
+      let rec;
+      if (publicMode) {
+        const found = await base44.entities.ClientMap.filter({ shareToken: token }, '-created_date', 1);
+        rec = found?.[0];
+        if (!rec) throw new Error('Analyse introuvable ou lien expiré');
+      } else {
+        rec = await base44.entities.ClientMap.get(routeId);
+      }
+      setMapId(rec.id);
+      // Analyses created before sharing existed have no token — give them one.
+      if (!publicMode && !rec.shareToken) {
+        try {
+          const shareToken = genShareToken();
+          await base44.entities.ClientMap.update(rec.id, { shareToken, isPublic: true });
+          rec = { ...rec, shareToken };
+        } catch { /* non blocking */ }
+      }
+      const list = await base44.entities.ClientPoint.filter({ mapId: rec.id }, '-created_date', 5000);
       setRecord(rec);
       setClients(list || []);
       // Restore saved display settings
@@ -67,7 +86,7 @@ export default function ClientAnalysis() {
     } catch (e) {
       toast({ title: 'Erreur de chargement', description: e.message, variant: 'destructive' });
     } finally { setLoading(false); }
-  }, [id, toast]);
+  }, [routeId, token, publicMode, toast]);
   useEffect(() => { load(); }, [load]);
 
   const handleSave = async () => {
@@ -75,12 +94,19 @@ export default function ClientAnalysis() {
     try {
       const map = mapRef.current;
       const c = map?.getCenter();
-      await base44.entities.ClientMap.update(id, {
+      const payload = {
         colorMode,
         filters: JSON.stringify({ statut: statutFilter, dept: deptFilter, query }),
         mapView: c ? JSON.stringify({ lat: c.lat, lng: c.lng, zoom: map.getZoom() }) : '',
         aiAnalysis: aiText || '',
-      });
+      };
+      if (publicMode) {
+        // Anonymous editors save through the backend function (token = secret).
+        const res = await base44.functions.invoke('saveClientAnalysis', { shareToken: token, ...payload });
+        if (res?.data?.error || res?.error) throw new Error(res?.data?.error || res?.error);
+      } else {
+        await base44.entities.ClientMap.update(mapId, payload);
+      }
       toast({ title: 'Analyse enregistrée ✓' });
     } catch (e) {
       toast({ title: 'Erreur sauvegarde', description: e.message, variant: 'destructive' });
@@ -97,7 +123,7 @@ export default function ClientAnalysis() {
       const statut = n.includes('actif') ? 'ACTIF' : n.includes('2024') ? 'PERDU_2024' : n.includes('2025') ? 'PERDU_2025' : '';
       const rows = await parseClientFile(file, statut, pushLog);
       if (!rows.length) throw new Error('Aucun client exploitable');
-      const geo = (await geocodeClients(rows, pushLog)).map(c => ({ ...c, mapId: id }));
+      const geo = (await geocodeClients(rows, pushLog)).map(c => ({ ...c, mapId }));
       pushLog(`💾 Enregistrement de ${geo.length} clients…`);
       for (let i = 0; i < geo.length; i += CHUNK) {
         await base44.entities.ClientPoint.bulkCreate(geo.slice(i, i + CHUNK));
@@ -119,7 +145,7 @@ export default function ClientAnalysis() {
     if (!clients.length) return;
     if (!window.confirm(`Supprimer les ${clients.length} clients de cette analyse ?`)) return;
     try {
-      await base44.entities.ClientPoint.deleteMany({ mapId: id });
+      await base44.entities.ClientPoint.deleteMany({ mapId });
       setAiText('');
       load();
       toast({ title: 'Données supprimées' });
@@ -219,6 +245,11 @@ export default function ClientAnalysis() {
 
   const geoOk = filtered.filter(c => Number.isFinite(c.lat)).length;
 
+  const copyLink = (path, msg) => {
+    const url = `${window.location.origin}${path}`;
+    navigator.clipboard.writeText(url).then(() => toast({ title: msg })).catch(() => toast({ title: url }));
+  };
+
   // Zoom to a client and open its popup from the list.
   const focusClient = (c) => {
     const map = mapRef.current;
@@ -238,7 +269,9 @@ export default function ClientAnalysis() {
     <div className="h-screen flex flex-col bg-slate-950 text-slate-100" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-800/60 bg-slate-900/60 shrink-0">
-        <button onClick={() => navigate('/analyse-clients')} className="text-slate-400 hover:text-slate-100 p-1.5 rounded-lg hover:bg-slate-800"><ChevronLeft className="w-4 h-4" /></button>
+        {canManage && (
+          <button onClick={() => navigate('/analyse-clients')} className="text-slate-400 hover:text-slate-100 p-1.5 rounded-lg hover:bg-slate-800"><ChevronLeft className="w-4 h-4" /></button>
+        )}
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0"><BarChart3 className="w-4 h-4 text-white" /></div>
           <span className="font-extrabold tracking-tight truncate" title={record?.title}>{record?.title || 'Analyse clients'}</span>
@@ -246,13 +279,27 @@ export default function ClientAnalysis() {
         <span className="text-xs text-slate-500">{filtered.length} client{filtered.length > 1 ? 's' : ''} · {geoOk} géolocalisé{geoOk > 1 ? 's' : ''}</span>
         <div className="flex-1" />
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => e.target.files[0] && handleImport(e.target.files[0])} />
-        <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing} className="h-8 gap-1.5 text-xs border-slate-700 bg-slate-800/40 text-slate-200 hover:bg-slate-700/40">
-          {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Importer
-        </Button>
-        <Button size="sm" onClick={handleSave} disabled={saving} className="h-8 gap-1.5 text-xs bg-gradient-to-r from-indigo-500 to-violet-600">
-          <Save className="w-3.5 h-3.5" /> {saving ? '…' : 'Enregistrer'}
-        </Button>
-        {clients.length > 0 && (
+        {canManage && (
+          <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()} disabled={importing} className="h-8 gap-1.5 text-xs border-slate-700 bg-slate-800/40 text-slate-200 hover:bg-slate-700/40">
+            {importing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Importer
+          </Button>
+        )}
+        {canEdit && (
+          <Button size="sm" onClick={handleSave} disabled={saving} className="h-8 gap-1.5 text-xs bg-gradient-to-r from-indigo-500 to-violet-600">
+            <Save className="w-3.5 h-3.5" /> {saving ? '…' : 'Enregistrer'}
+          </Button>
+        )}
+        {canManage && record?.shareToken && (
+          <>
+            <Button size="sm" variant="outline" onClick={() => copyLink(`/analyse-publique/${record.shareToken}`, 'Lien public copié ✓')} title="Copier le lien public (lecture seule)" className="h-8 gap-1.5 text-xs border-slate-700 bg-slate-800/40 text-slate-200 hover:bg-slate-700/40">
+              <Share2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Partager</span>
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => copyLink(`/analyse-publique/${record.shareToken}/edit`, 'Lien modifiable copié ✓')} title="Copier le lien public modifiable" className="h-8 gap-1.5 text-xs border-amber-600/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20">
+              <Link2 className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Lien modifiable</span>
+            </Button>
+          </>
+        )}
+        {canManage && clients.length > 0 && (
           <Button size="sm" variant="outline" onClick={handleClearAll} className="h-8 gap-1.5 text-xs border-slate-700 bg-slate-800/40 text-rose-400 hover:bg-rose-500/10">
             <Trash2 className="w-3.5 h-3.5" /> Tout effacer
           </Button>
