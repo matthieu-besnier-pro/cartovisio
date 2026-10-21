@@ -11,6 +11,7 @@ import MapEditor from '@/pages/MapEditor';
 import PublicMap from '@/pages/PublicMap';
 import PublicMapEditor from '@/pages/PublicMapEditor';
 import PoleAgriManager from '@/pages/PoleAgriManager';
+import ClientAnalysis from '@/pages/ClientAnalysis';
 // Add page imports here
 
 const AuthenticatedApp = () => {
@@ -45,6 +46,7 @@ const AuthenticatedApp = () => {
       <Route path="/public/:token" element={<PublicMap />} />
       <Route path="/public/:token/edit" element={<PublicMapEditor />} />
       <Route path="/pole-agri" element={<PoleAgriManager />} />
+      <Route path="/analyse-clients" element={<ClientAnalysis />} />
       <Route path="*" element={<PageNotFound />} />
     </Routes>
   );

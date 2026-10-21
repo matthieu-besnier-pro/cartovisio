@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin, Link2 } from 'lucide-react';
+import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin, Link2, BarChart3 } from 'lucide-react';
 import { syncCV, genShareToken, readFieldContent, TILES, parseMapView, fetchDeptGeo } from '@/lib/commercialMapUtils';
 
 export default function MapsGallery() {
@@ -106,6 +106,9 @@ export default function MapsGallery() {
             </Button>
             <Button variant="outline" onClick={() => navigate('/pole-agri')} className="gap-2 border-slate-700 bg-slate-800/40 text-slate-200 hover:bg-slate-700/40">
               <MapPin className="w-4 h-4" /> Points Pôle Agri
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/analyse-clients')} className="gap-2 border-indigo-600/40 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20">
+              <BarChart3 className="w-4 h-4" /> Analyse clients
             </Button>
             <div className="flex items-center gap-4 text-xs text-slate-500">
               <span className="flex items-center gap-1.5"><Globe className="w-3.5 h-3.5" /> Liens publics</span>

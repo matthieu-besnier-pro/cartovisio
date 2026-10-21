@@ -1,0 +1,90 @@
+{
+  "name": "ClientPoint",
+  "type": "object",
+  "properties": {
+    "statut": {
+      "type": "string",
+      "description": "Statut du compte : ACTIF, PERDU_2024, PERDU_2025 (défini à l'import)"
+    },
+    "idCompte": {
+      "type": "string",
+      "description": "id_compte_rcu"
+    },
+    "societe": {
+      "type": "string"
+    },
+    "siret": {
+      "type": "string"
+    },
+    "identiteJuridique": {
+      "type": "string",
+      "description": "SOCIETE / PARTICULIER"
+    },
+    "naf": {
+      "type": "string",
+      "description": "naf_libelle — activité"
+    },
+    "effectifs": {
+      "type": "string"
+    },
+    "adresse": {
+      "type": "string"
+    },
+    "codePostal": {
+      "type": "string"
+    },
+    "ville": {
+      "type": "string"
+    },
+    "departement": {
+      "type": "string"
+    },
+    "filiale": {
+      "type": "string"
+    },
+    "pointDeVente": {
+      "type": "string"
+    },
+    "tauxAffiliation": {
+      "type": "number",
+      "description": "taux_affiliation_pdv en %"
+    },
+    "ca2024": {
+      "type": "number",
+      "description": "ca_magasin_2024"
+    },
+    "ca2025": {
+      "type": "number",
+      "description": "ca_magasin_2025"
+    },
+    "ca2026": {
+      "type": "number",
+      "description": "ca_magasin_2026"
+    },
+    "caTotal": {
+      "type": "number",
+      "description": "ca_magasin_total_3_ans"
+    },
+    "nbPassages": {
+      "type": "number",
+      "description": "nb_passages_magasin_3_ans"
+    },
+    "dernierAchat": {
+      "type": "string",
+      "description": "Date du dernier achat magasin (ISO yyyy-mm-dd)"
+    },
+    "lat": {
+      "type": "number"
+    },
+    "lng": {
+      "type": "number"
+    },
+    "geoScore": {
+      "type": "number",
+      "description": "Score de confiance du géocodage BAN (0-1)"
+    }
+  },
+  "required": [
+    "societe"
+  ]
+}
