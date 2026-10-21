@@ -145,8 +145,48 @@ export async function parseClientFile(file, statut, onLog) {
       dernierAchat: excelDateToIso(get('dernierAchat')),
     });
   }
-  log(`✅ ${out.length} clients lus`, 'ok');
+  log(`✅ ${out.length} lignes lues`, 'ok');
+
+  // The CA export has ONE ROW PER INTERLOCUTEUR, with the exploitation's
+  // revenue repeated identically on each row. Collapse them to one record per
+  // exploitation, otherwise the same CA is counted several times.
+  if (hasCA) {
+    const merged = dedupeExploitations(out);
+    if (merged.length !== out.length) {
+      log(`🏢 ${merged.length} exploitations (${out.length} interlocuteurs regroupés)`, 'ok');
+    }
+    return merged;
+  }
   return out;
+}
+
+// Group rows belonging to the same exploitation. Rows of one account share the
+// same name, location AND the same CA figures — that signature is the key.
+export function dedupeExploitations(rows) {
+  const groups = new Map();
+  rows.forEach(r => {
+    const key = [norm(r.societe), r.codePostal, norm(r.ville), r.ca2024, r.ca2025, r.ca2026].join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  });
+  return [...groups.values()].map(g => {
+    const base = g[0];
+    const first = (f) => g.find(r => r[f])?.[f] || '';
+    const contacts = [...new Set(
+      g.map(r => [r.prenom, r.nom].filter(Boolean).join(' ').trim()).filter(Boolean)
+    )];
+    const dates = g.map(r => r.dernierAchat).filter(Boolean).sort();
+    return {
+      ...base,
+      nom: base.nom, prenom: base.prenom,
+      telephone: first('telephone'),
+      email: first('email'),
+      nbInterlocuteurs: g.length,
+      contacts: contacts.join(', ').slice(0, 900),
+      nbPassages: Math.max(...g.map(r => (Number.isFinite(r.nbPassages) ? r.nbPassages : 0))) || base.nbPassages,
+      dernierAchat: dates.length ? dates[dates.length - 1] : base.dernierAchat,
+    };
+  });
 }
 
 // ── Bulk geocoding via the French national address base (BAN) ─────────────

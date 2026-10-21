@@ -276,7 +276,7 @@ export default function ClientAnalysis({ publicMode = false, editable = false })
           <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0"><BarChart3 className="w-4 h-4 text-white" /></div>
           <span className="font-extrabold tracking-tight truncate" title={record?.title}>{record?.title || 'Analyse clients'}</span>
         </div>
-        <span className="text-xs text-slate-500">{filtered.length} client{filtered.length > 1 ? 's' : ''} · {geoOk} géolocalisé{geoOk > 1 ? 's' : ''}</span>
+        <span className="text-xs text-slate-500">{filtered.length} exploitation{filtered.length > 1 ? 's' : ''} · {geoOk} géolocalisée{geoOk > 1 ? 's' : ''}</span>
         <div className="flex-1" />
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => e.target.files[0] && handleImport(e.target.files[0])} />
         {canManage && (
@@ -389,13 +389,13 @@ export default function ClientAnalysis({ publicMode = false, editable = false })
           {ranked.length > 0 && (
             <div className="p-3 border-b border-slate-800/60">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Clients ({ranked.length})</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Exploitations ({ranked.length})</span>
                 <span className="text-[9px] text-slate-600">tri : {COLOR_MODES.find(m => m.key === sortKey)?.label || 'CA'}</span>
               </div>
               <div className="max-h-72 overflow-y-auto space-y-0.5 pr-1">
                 {ranked.slice(0, 300).map(c => {
                   const v = c[sortKey];
-                  const contact = [c.prenom, c.nom].filter(Boolean).join(' ');
+                  const nbInter = Number.isFinite(c.nbInterlocuteurs) ? c.nbInterlocuteurs : 0;
                   return (
                     <button key={c.id} onClick={() => focusClient(c)}
                       className="w-full text-left rounded-lg px-2 py-1.5 hover:bg-slate-800/60 transition-colors group">
@@ -406,8 +406,8 @@ export default function ClientAnalysis({ publicMode = false, editable = false })
                         </span>
                       </div>
                       <div className="flex items-baseline gap-2 text-[9px] text-slate-500">
-                        <span className="flex-1 truncate">{contact || c.ville}</span>
-                        {contact && <span className="truncate">{c.ville}</span>}
+                        <span className="flex-1 truncate">{c.ville}</span>
+                        {nbInter > 1 && <span className="shrink-0" title={c.contacts}>{nbInter} interlocuteurs</span>}
                       </div>
                     </button>
                   );
@@ -447,9 +447,9 @@ function StatsPanel({ stats, hasCA }) {
     <div className="p-3 border-b border-slate-800/60">
       <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Synthèse</div>
       <div className="grid grid-cols-2 gap-2 mb-3">
-        <Card label="Clients" value={stats.total} />
+        <Card label="Exploitations" value={stats.total} />
         {hasCA && <Card label="CA 2026" value={fmtEuro(stats.caParAnnee[2026])} />}
-        {hasCA && <Card label="CA moyen / client" value={fmtEuro(stats.caMoyenParClient)} />}
+        {hasCA && <Card label="CA moyen / exploit." value={fmtEuro(stats.caMoyenParClient)} />}
         {hasCA && evo !== null && (
           <Card label="Évolution 24→26" value={`${evo > 0 ? '+' : ''}${evo} %`} tone={evo >= 0 ? 'up' : 'down'} />
         )}
@@ -598,10 +598,13 @@ function esc(s) { return String(s ?? '').replace(/[<>&]/g, c => ({ '<': '&lt;', 
 function popupHtml(c) {
   const ev = caEvolution(c);
   const row = (k, v) => v ? `<div style="display:flex;justify-content:space-between;gap:10px"><span style="color:#64748b">${k}</span><span style="font-weight:600;color:#0f172a">${v}</span></div>` : '';
+  const nbInter = Number.isFinite(c.nbInterlocuteurs) ? c.nbInterlocuteurs : 0;
   const contact = [c.prenom, c.nom].filter(Boolean).join(' ');
-  return `<div style="font-family:Inter,system-ui,sans-serif;min-width:210px;font-size:11px">
+  return `<div style="font-family:Inter,system-ui,sans-serif;min-width:210px;max-width:300px;font-size:11px">
     <div style="font-weight:700;font-size:12.5px;color:#0f172a;margin-bottom:2px">${esc(c.societe)}</div>
-    ${contact ? `<div style="color:#334155;margin-bottom:1px">${esc(contact)}</div>` : ''}
+    ${nbInter > 1
+      ? `<div style="color:#334155;margin-bottom:3px"><b>${nbInter} interlocuteurs</b><div style="color:#64748b;font-size:10px;line-height:1.4">${esc(c.contacts || '')}</div></div>`
+      : (contact ? `<div style="color:#334155;margin-bottom:1px">${esc(contact)}</div>` : '')}
     <div style="color:#64748b;margin-bottom:6px">${esc([c.adresse, c.codePostal, c.ville].filter(Boolean).join(' · '))}</div>
     ${c.telephone ? `<div style="margin-bottom:2px"><a href="tel:${esc(c.telephone)}" style="color:#4f46e5;text-decoration:none">${esc(c.telephone)}</a></div>` : ''}
     ${c.email ? `<div style="margin-bottom:6px"><a href="mailto:${esc(c.email)}" style="color:#4f46e5;text-decoration:none">${esc(c.email)}</a></div>` : ''}
