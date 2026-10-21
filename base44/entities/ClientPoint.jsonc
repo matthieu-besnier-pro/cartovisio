@@ -2,6 +2,10 @@
   "name": "ClientPoint",
   "type": "object",
   "properties": {
+    "mapId": {
+      "type": "string",
+      "description": "Id de la ClientMap (analyse) à laquelle ce client appartient"
+    },
     "statut": {
       "type": "string",
       "description": "Statut du compte : ACTIF, PERDU_2024, PERDU_2025 (défini à l'import)"

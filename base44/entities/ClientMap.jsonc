@@ -1,0 +1,35 @@
+{
+  "name": "ClientMap",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "colorMode": {
+      "type": "string",
+      "description": "Mode de couleur actif (ca2026, evolution, statut…)"
+    },
+    "mapView": {
+      "type": "string",
+      "description": "JSON string {lat,lng,zoom}"
+    },
+    "filters": {
+      "type": "string",
+      "description": "JSON string {statut:[], dept:'', query:''}"
+    },
+    "aiAnalysis": {
+      "type": "string",
+      "description": "Dernière analyse IA générée (markdown), conservée avec la carte"
+    },
+    "accentColor": {
+      "type": "string",
+      "default": "#6366f1"
+    }
+  },
+  "required": [
+    "title"
+  ]
+}
