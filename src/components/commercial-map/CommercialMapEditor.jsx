@@ -148,8 +148,8 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
       const val = f.properties?.value || 0;
       const idx = asc.indexOf(val);
       const color = ISO_COLORS[idx % ISO_COLORS.length];
-      L.geoJSON(f, { style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.18 } })
-        .bindTooltip(`${Math.round(val / 60)} min`, { sticky: true })
+      L.geoJSON(f, { style: { color, weight: 1.5, fillColor: color, fillOpacity: 0.18, fillRule: 'nonzero' } })
+        .bindTooltip(`${f.properties?.approx ? '≈ ' : ''}${Math.round(val / 60)} min`, { sticky: true })
         .addTo(group);
     });
     const marker = L.circleMarker([pt.lat, pt.lng], { radius: 6, color: '#fff', weight: 2, fillColor: '#0f172a', fillOpacity: 1 })
@@ -1005,8 +1005,11 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
             </div>
 
             <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Durées (min) · max 4</div>
+            {isoRanges.some(m => m > 60) && (
+              <div className="text-[9px] text-amber-400/80 mb-1 leading-snug">Au-delà de 60 min : zone approchée (le service public plafonne à 60 min), calcul plus long.</div>
+            )}
             <div className="flex flex-wrap gap-1.5 mb-3">
-              {[5, 10, 15, 20, 30, 45, 60].map(mnt => {
+              {[5, 10, 15, 20, 30, 45, 60, 90, 120].map(mnt => {
                 const on = isoRanges.includes(mnt);
                 return (
                   <button
