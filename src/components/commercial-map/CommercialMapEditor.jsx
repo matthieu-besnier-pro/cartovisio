@@ -756,7 +756,27 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
   const toggleOverlayVisible = (id) => setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, visible: !o.visible } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
   const removeOverlay = (id) => setOverlaysHist(prev => { const next = prev.filter(o => o.id !== id); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
   const changeOpacity = (id, val) => setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, opacity: parseInt(val) / 100 } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
-  const changeColor = (id, vendeur, c) => setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, vColors: { ...o.vColors, [vendeur]: c } } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
+  // Remove a vendor from one layer: drop every commune assigned to them and
+  // their colour. Goes through the history stack so Ctrl+Z restores it.
+  const removeVendor = (id, vendeur) => {
+    setActiveV(prev => (prev === vendeur ? null : prev));
+    setOverlaysHist(prev => {
+      const next = prev.map(o => {
+        if (o.id !== id) return o;
+        const cV = {};
+        Object.entries(o.cV || {}).forEach(([code, v]) => { if (v !== vendeur) cV[code] = v; });
+        const vColors = { ...(o.vColors || {}) };
+        delete vColors[vendeur];
+        return { ...o, cV, vColors };
+      });
+      overlaysRef.current = next;
+      setTimeout(renderAll, 0);
+      return next;
+    });
+    toast({ title: `Commercial « ${vendeur} » supprimé` });
+  };
+
+  const changeColor = (id, vendeur, c) = setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, vColors: { ...o.vColors, [vendeur]: c } } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
 
   const tableChangeVendeur = (code, vendeur) => {
     if (vendeur === '__new__') {
@@ -1056,7 +1076,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
               <TabBtn active={sidebarTab === 'legend'} onClick={() => setSidebarTab('legend')} icon={<MapPin className="w-3.5 h-3.5" />}>Secteurs</TabBtn>
               <TabBtn active={sidebarTab === 'import'} onClick={() => setSidebarTab('import')} icon={<Download className="w-3.5 h-3.5" />}>Import</TabBtn>
             </div>
-            {sidebarTab === 'legend' && <LegendSidebar overlays={overlays} activeV={activeV} onToggleVendor={toggleVendor} onShowAll={showAll} onToggleOverlayVisible={toggleOverlayVisible} onRemoveOverlay={removeOverlay} onChangeOpacity={changeOpacity} onChangeColor={changeColor} readOnly={readOnly} />}
+            {sidebarTab === 'legend' && <LegendSidebar overlays={overlays} activeV={activeV} onToggleVendor={toggleVendor} onShowAll={showAll} onToggleOverlayVisible={toggleOverlayVisible} onRemoveOverlay={removeOverlay} onChangeOpacity={changeOpacity} onChangeColor={changeColor} onRemoveVendor={removeVendor} readOnly={readOnly} />}
             {sidebarTab === 'import' && <ImportPanel onImport={handleImport} importLog={importLog} loading={loading} />}
           </aside>
         )}
@@ -1065,7 +1085,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
             <div className="px-3 py-2.5 border-b border-slate-800/60 bg-slate-950/40">
               <span className="text-xs font-bold text-slate-300 uppercase tracking-wider">Légende</span>
             </div>
-            <LegendSidebar overlays={overlays} activeV={activeV} onToggleVendor={toggleVendor} onShowAll={showAll} onToggleOverlayVisible={toggleOverlayVisible} onRemoveOverlay={removeOverlay} onChangeOpacity={changeOpacity} onChangeColor={changeColor} readOnly={readOnly} />
+            <LegendSidebar overlays={overlays} activeV={activeV} onToggleVendor={toggleVendor} onShowAll={showAll} onToggleOverlayVisible={toggleOverlayVisible} onRemoveOverlay={removeOverlay} onChangeOpacity={changeOpacity} onChangeColor={changeColor} onRemoveVendor={removeVendor} readOnly={readOnly} />
           </aside>
         )}
       </div>

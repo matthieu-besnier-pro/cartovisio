@@ -1,9 +1,9 @@
 import React from 'react';
-import { Eye, EyeOff, X, Palette } from 'lucide-react';
+import { Eye, EyeOff, X, Palette, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { countByVendeur } from '@/lib/commercialMapUtils';
 
-export default function LegendSidebar({ overlays, activeV, onToggleVendor, onShowAll, onToggleOverlayVisible, onRemoveOverlay, onChangeOpacity, onChangeColor, readOnly }) {
+export default function LegendSidebar({ overlays, activeV, onToggleVendor, onShowAll, onToggleOverlayVisible, onRemoveOverlay, onChangeOpacity, onChangeColor, onRemoveVendor, readOnly }) {
   const totalCommunes = overlays.reduce((s, o) => s + (o.visible ? Object.keys(o.cV || {}).length : 0), 0);
   const allVendors = new Set();
   overlays.forEach(o => { if (o.visible) Object.values(o.cV || {}).forEach(v => allVendors.add(v)); });
@@ -62,7 +62,7 @@ export default function LegendSidebar({ overlays, activeV, onToggleVendor, onSho
                         <div
                           key={name}
                           className={cn(
-                            'flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors',
+                            'group/vendor flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition-colors',
                             activeV ? (isActive ? 'bg-sky-500/10 ring-1 ring-sky-500/30' : 'opacity-40 hover:opacity-70') : 'hover:bg-slate-700/30'
                           )}
                           onClick={() => onToggleVendor(name)}
@@ -78,6 +78,20 @@ export default function LegendSidebar({ overlays, activeV, onToggleVendor, onSho
                           </label>
                           <span className="text-xs font-medium text-slate-200 flex-1 truncate">{name}</span>
                           <span className="text-[11px] font-bold text-sky-300 bg-sky-500/10 px-1.5 py-0.5 rounded min-w-[28px] text-center">{counts[name]}</span>
+                          {!readOnly && onRemoveVendor && (
+                            <button
+                              title={`Supprimer ${name}`}
+                              className="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-500/10 opacity-0 group-hover/vendor:opacity-100 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Supprimer le commercial « ${name} » ?\n\nSes ${counts[name]} commune(s) seront désaffectées. Annulable avec Ctrl+Z.`)) {
+                                  onRemoveVendor(o.id, name);
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       );
                     })}
