@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { ChevronLeft, Plus, Trash2, Loader2, BarChart3, Users, Euro } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, Loader2, BarChart3, Users, Euro, Copy } from 'lucide-react';
 import { fmtEuro } from '@/lib/clientAnalysisUtils';
 import { genShareToken } from '@/lib/commercialMapUtils';
 
@@ -19,6 +19,7 @@ export default function ClientAnalysisList() {
   const [desc, setDesc] = useState('');
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [duplicating, setDuplicating] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -52,6 +53,38 @@ export default function ClientAnalysisList() {
     } catch (e) {
       toast({ title: 'Erreur création', description: e.message, variant: 'destructive' });
     } finally { setCreating(false); }
+  };
+
+  // Duplicate an analysis together with its client points, so filters and
+  // scenarios can be explored without touching the original.
+  const handleDuplicate = async (m) => {
+    setDuplicating(m.id);
+    try {
+      const rec = await base44.entities.ClientMap.create({
+        title: `${m.title} (copie)`,
+        description: m.description || '',
+        colorMode: m.colorMode || 'caTotal',
+        filters: m.filters || '',
+        mapView: m.mapView || '',
+        aiAnalysis: m.aiAnalysis || '',
+        accentColor: m.accentColor,
+        isPublic: m.isPublic ?? true,
+        shareToken: genShareToken(),
+      });
+      const pts = await base44.entities.ClientPoint.filter({ mapId: m.id }, '-created_date', 5000);
+      for (let i = 0; i < (pts || []).length; i += 200) {
+        const chunk = pts.slice(i, i + 200).map(p => {
+          // Drop the platform-managed fields before re-creating the row.
+          const { id, created_date, updated_date, created_by_id, is_sample, ...rest } = p;
+          return { ...rest, mapId: rec.id };
+        });
+        await base44.entities.ClientPoint.bulkCreate(chunk);
+      }
+      toast({ title: 'Analyse dupliquée ✓', description: `${pts?.length || 0} exploitations copiées` });
+      load();
+    } catch (e) {
+      toast({ title: 'Erreur duplication', description: e.message, variant: 'destructive' });
+    } finally { setDuplicating(null); }
   };
 
   const handleDelete = async (m) => {
@@ -111,6 +144,9 @@ export default function ClientAnalysisList() {
                 <div className="flex items-center gap-1.5 px-4 pb-4 pt-3 border-t border-slate-800/60">
                   <Button size="sm" variant="outline" onClick={() => navigate(`/analyse-clients/${m.id}`)} className="h-8 gap-1.5 text-xs flex-1 border-slate-700 bg-slate-800/40 text-slate-200 hover:bg-slate-700/40">
                     <BarChart3 className="w-3.5 h-3.5" /> Ouvrir
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => handleDuplicate(m)} disabled={duplicating === m.id} className="h-8 w-8 p-0 border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40" title="Dupliquer l'analyse">
+                    {duplicating === m.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setConfirmDelete(m)} className="h-8 w-8 p-0 border-slate-700 bg-slate-800/40 text-rose-400/70 hover:bg-rose-500/10 hover:text-rose-400" title="Supprimer">
                     <Trash2 className="w-3.5 h-3.5" />

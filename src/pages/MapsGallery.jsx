@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
-import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin, Link2, BarChart3 } from 'lucide-react';
+import { Map as MapIcon, Plus, Share2, Trash2, Pencil, Eye, Globe, Loader2, MapPin, Link2, BarChart3, Copy } from 'lucide-react';
 import { syncCV, genShareToken, readFieldContent, TILES, parseMapView, fetchDeptGeo } from '@/lib/commercialMapUtils';
 
 export default function MapsGallery() {
@@ -18,6 +18,7 @@ export default function MapsGallery() {
   const [newDesc, setNewDesc] = useState('');
   const [creating, setCreating] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [duplicating, setDuplicating] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -59,6 +60,31 @@ export default function MapsGallery() {
     } finally {
       setCreating(false);
     }
+  };
+
+  // Duplicate a map: the overlay/marker files are referenced, not copied —
+  // saving either map always writes new files, so the original is never touched.
+  const handleDuplicate = async (m) => {
+    setDuplicating(m.id);
+    try {
+      await base44.entities.CommercialMap.create({
+        title: `${m.title} (copie)`,
+        description: m.description || '',
+        overlays: m.overlays || '[]',
+        mapView: m.mapView || '',
+        departments: m.departments || '[]',
+        markers: m.markers || '[]',
+        isochrones: m.isochrones || '',
+        isPublic: m.isPublic ?? true,
+        accentColor: m.accentColor,
+        coverColor: m.coverColor,
+        shareToken: genShareToken(),
+      });
+      toast({ title: 'Carte dupliquée ✓', description: `${m.title} (copie)` });
+      load();
+    } catch (e) {
+      toast({ title: 'Erreur duplication', description: e.message, variant: 'destructive' });
+    } finally { setDuplicating(null); }
   };
 
   const handleDelete = async (id) => {
@@ -175,6 +201,9 @@ export default function MapsGallery() {
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => copyShareEditable(m.shareToken)} className="h-8 w-8 p-0 border-amber-600/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20" title="Copier le lien public modifiable">
                         <Link2 className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleDuplicate(m)} disabled={duplicating === m.id} className="h-8 w-8 p-0 border-slate-700 bg-slate-800/40 text-slate-300 hover:bg-slate-700/40" title="Dupliquer la carte">
+                        {duplicating === m.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}
                       </Button>
                       <Button size="sm" variant="outline" onClick={() => setConfirmDelete(m)} className="h-8 w-8 p-0 border-slate-700 bg-slate-800/40 text-rose-400/70 hover:bg-rose-500/10 hover:text-rose-400" title="Supprimer">
                         <Trash2 className="w-3.5 h-3.5" />
