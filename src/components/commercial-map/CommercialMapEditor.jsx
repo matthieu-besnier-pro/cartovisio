@@ -776,7 +776,7 @@ export default function CommercialMapEditor({ record, readOnly = false, serializ
     toast({ title: `Commercial « ${vendeur} » supprimé` });
   };
 
-  const changeColor = (id, vendeur, c) = setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, vColors: { ...o.vColors, [vendeur]: c } } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
+  const changeColor = (id, vendeur, c) => setOverlaysHist(prev => { const next = prev.map(o => o.id === id ? { ...o, vColors: { ...o.vColors, [vendeur]: c } } : o); overlaysRef.current = next; setTimeout(renderAll, 0); return next; });
 
   const tableChangeVendeur = (code, vendeur) => {
     if (vendeur === '__new__') {
